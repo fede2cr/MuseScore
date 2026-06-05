@@ -49,11 +49,19 @@ path.write_text(text)
 for relative_path, replacements in {
     'muse/framework/audio/driver/CMakeLists.txt': [
         (
+            'elseif(OS_IS_LIN OR OS_IS_FBSD)\n',
+            'elseif((OS_IS_LIN OR OS_IS_FBSD) AND NOT ANDROID)\n',
+        ),
+        (
             '    find_package(ALSA REQUIRED)\n    target_link_libraries(muse_audio_driver PRIVATE ALSA::ALSA pthread)\n',
             '    if (NOT ANDROID)\n        find_package(ALSA REQUIRED)\n        target_link_libraries(muse_audio_driver PRIVATE ALSA::ALSA pthread)\n    endif()\n',
         ),
     ],
     'muse/framework/midi/CMakeLists.txt': [
+        (
+            'elseif (OS_IS_LIN OR OS_IS_FBSD)\n',
+            'elseif ((OS_IS_LIN OR OS_IS_FBSD) AND NOT ANDROID)\n',
+        ),
         (
             '    find_package(ALSA REQUIRED)\n    target_include_directories(muse_midi PRIVATE ${ALSA_INCLUDE_DIRS})\n    target_link_libraries(muse_midi PRIVATE ${ALSA_LIBRARIES} pthread)\n',
             '    if (NOT ANDROID)\n        find_package(ALSA REQUIRED)\n        target_include_directories(muse_midi PRIVATE ${ALSA_INCLUDE_DIRS})\n        target_link_libraries(muse_midi PRIVATE ${ALSA_LIBRARIES} pthread)\n    endif()\n',
