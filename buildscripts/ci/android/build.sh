@@ -58,6 +58,21 @@ MUSESCORE_REVISION="$(git rev-parse --short=7 HEAD)"
 
 mkdir -p "$BUILD_DIR"
 
+# Allow CI to inject a compiler launcher (for example sccache) without
+# coupling the project CMake files to a specific cache tool.
+if [[ -n "${SCCACHE_PATH:-}" ]]; then
+    : "${CMAKE_C_COMPILER_LAUNCHER:=$SCCACHE_PATH}"
+    : "${CMAKE_CXX_COMPILER_LAUNCHER:=$SCCACHE_PATH}"
+fi
+
+CMAKE_LAUNCHER_ARGS=()
+if [[ -n "${CMAKE_C_COMPILER_LAUNCHER:-}" ]]; then
+    CMAKE_LAUNCHER_ARGS+=("-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}")
+fi
+if [[ -n "${CMAKE_CXX_COMPILER_LAUNCHER:-}" ]]; then
+    CMAKE_LAUNCHER_ARGS+=("-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}")
+fi
+
 cmake -S . -B "$BUILD_DIR" -GNinja \
     -Wno-deprecated \
     -DCMAKE_BUILD_TYPE=Release \
@@ -70,7 +85,8 @@ cmake -S . -B "$BUILD_DIR" -GNinja \
     -DMUSE_APP_BUILD_MODE="$MUSE_APP_BUILD_MODE" \
     -DMUSESCORE_BUILD_NUMBER="$BUILD_NUMBER" \
     -DMUSESCORE_REVISION="$MUSESCORE_REVISION" \
-    -DMUE_ANDROID_TABLET_DESKTOP_EXPERIENCE=ON
+    -DMUE_ANDROID_TABLET_DESKTOP_EXPERIENCE=ON \
+    "${CMAKE_LAUNCHER_ARGS[@]}"
 
 # Some fdk-aac payloads in muse_deps may contain Android-internal logging hooks
 # (non-NDK) that are not available in this CI environment. Sanitize those

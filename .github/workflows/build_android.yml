@@ -135,12 +135,47 @@ jobs:
         modules: 'qt5compat qtnetworkauth qtshadertools qtwebsockets'
         cache: true
 
+    - name: Restore sccache files
+      id: restore-sccache
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ github.workspace }}/.sccache
+        key: android-${{ runner.os }}-${{ runner.arch }}-sccache-
+        restore-keys: android-${{ runner.os }}-${{ runner.arch }}-sccache-
+
+    - name: Setup sccache
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y sccache
+
+        SCCACHE_PATH="$(command -v sccache)"
+        SCCACHE_DIR="${GITHUB_WORKSPACE}/.sccache"
+        mkdir -p "$SCCACHE_DIR"
+
+        echo "SCCACHE_PATH=$SCCACHE_PATH" | tee -a "$GITHUB_ENV"
+        echo "SCCACHE_DIR=$SCCACHE_DIR" | tee -a "$GITHUB_ENV"
+        echo "SCCACHE_CACHE_SIZE=2G" | tee -a "$GITHUB_ENV"
+        echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" | tee -a "$GITHUB_ENV"
+        echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" | tee -a "$GITHUB_ENV"
+
+        sccache --zero-stats || true
+
     - name: Build Android artifact
       env:
         QT_ROOT_DIR: ${{ env.QT_ROOT_DIR }}
+        SCCACHE_PATH: ${{ env.SCCACHE_PATH }}
+        SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
+        SCCACHE_CACHE_SIZE: ${{ env.SCCACHE_CACHE_SIZE }}
+        CMAKE_C_COMPILER_LAUNCHER: ${{ env.CMAKE_C_COMPILER_LAUNCHER }}
+        CMAKE_CXX_COMPILER_LAUNCHER: ${{ env.CMAKE_CXX_COMPILER_LAUNCHER }}
       run: |
         chmod +x ./buildscripts/ci/android/build.sh
         bash ./buildscripts/ci/android/build.sh -n ${{ steps.configure.outputs.build_number }} --build_mode "${BUILD_MODE}"
+
+    - name: Show sccache stats
+      if: always()
+      run: |
+        sccache --show-stats || true
 
     - name: Sign APK (optional)
       env:
@@ -207,3 +242,16 @@ jobs:
         path: ./build.artifacts/android/
         if-no-files-found: error
         retention-days: 14
+
+    - name: Prepare sccache files for saving
+      id: prepare-save-sccache
+      if: always()
+      run: |
+        echo "SCCACHE_TIMESTAMP=$(date -u +"%F-%T")" | tee -a "$GITHUB_OUTPUT"
+
+    - name: Save sccache files
+      if: always()
+      uses: actions/cache/save@v5
+      with:
+        key: ${{ steps.restore-sccache.outputs.cache-primary-key }}${{ steps.prepare-save-sccache.outputs.SCCACHE_TIMESTAMP }}
+        path: ${{ github.workspace }}/.sccache

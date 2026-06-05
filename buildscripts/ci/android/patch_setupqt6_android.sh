@@ -107,6 +107,16 @@ for relative_path, replacements in {
             '    #if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n    m_midiOutPort = std::make_shared<AlsaMidiOutPort>();\n    m_midiInPort = std::make_shared<AlsaMidiInPort>();\n',
         ),
     ],
+    'muse/framework/midi/midimodule.h': [
+        (
+            '#if defined(Q_OS_LINUX)\nclass AlsaMidiOutPort;\nclass AlsaMidiInPort;\n',
+            '#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)\nclass AlsaMidiOutPort;\nclass AlsaMidiInPort;\n',
+        ),
+        (
+            '    #if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)\n    std::shared_ptr<AlsaMidiOutPort> m_midiOutPort;\n    std::shared_ptr<AlsaMidiInPort> m_midiInPort;\n',
+            '    #if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n    std::shared_ptr<AlsaMidiOutPort> m_midiOutPort;\n    std::shared_ptr<AlsaMidiInPort> m_midiInPort;\n',
+        ),
+    ],
     'muse/framework/audio/main/internal/audiodrivercontroller.cpp': [
         (
             '#if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)\n#include <QtEnvironmentVariables>\n#include "audio/driver/platform/lin/alsaaudiodriver.h"\n',
