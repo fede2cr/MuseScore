@@ -131,6 +131,18 @@ for relative_path, replacements in {
             '#if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n    names.push_back("ALSA");\n',
         ),
     ],
+    'muse/framework/midi/internal/dummymidioutport.cpp': [
+        (
+            'void DummyMidiOutPort::init()\n{\n}\n',
+            'void DummyMidiOutPort::init()\n{\n}\n\nvoid DummyMidiOutPort::deinit()\n{\n}\n\nasync::Notification DummyMidiOutPort::deviceChanged() const\n{\n    return async::Notification();\n}\n',
+        ),
+    ],
+    'muse/framework/midi/internal/dummymidiinport.cpp': [
+        (
+            'void DummyMidiInPort::init()\n{\n}\n',
+            'void DummyMidiInPort::init()\n{\n}\n\nvoid DummyMidiInPort::deinit()\n{\n}\n\nasync::Notification DummyMidiInPort::availableDevicesChanged() const\n{\n    return async::Notification();\n}\n\nasync::Notification DummyMidiInPort::deviceChanged() const\n{\n    return async::Notification();\n}\n',
+        ),
+    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():
