@@ -143,6 +143,26 @@ for relative_path, replacements in {
             'void DummyMidiInPort::init()\n{\n}\n\nvoid DummyMidiInPort::deinit()\n{\n}\n\nasync::Notification DummyMidiInPort::availableDevicesChanged() const\n{\n    return async::Notification();\n}\n\nasync::Notification DummyMidiInPort::deviceChanged() const\n{\n    return async::Notification();\n}\n',
         ),
     ],
+    'muse/framework/midi/internal/dummymidioutport.h': [
+        (
+            'public:\n\n    void init();\n\n    MidiDeviceList availableDevices() const override;\n    async::Notification availableDevicesChanged() const override;\n',
+            'public:\n\n    void init();\n    void deinit();\n\n    MidiDeviceList availableDevices() const override;\n    async::Notification availableDevicesChanged() const override;\n',
+        ),
+        (
+            '    MidiDeviceID deviceID() const override;\n\n    bool supportsMIDI20Output() const override;\n',
+            '    MidiDeviceID deviceID() const override;\n    async::Notification deviceChanged() const override;\n\n    bool supportsMIDI20Output() const override;\n',
+        ),
+    ],
+    'muse/framework/midi/internal/dummymidiinport.h': [
+        (
+            'public:\n\n    void init();\n\n    std::vector<MidiDevice> availableDevices() const override;\n\n    Ret connect(const MidiDeviceID& deviceID) override;\n',
+            'public:\n\n    void init();\n    void deinit();\n\n    std::vector<MidiDevice> availableDevices() const override;\n    async::Notification availableDevicesChanged() const override;\n\n    Ret connect(const MidiDeviceID& deviceID) override;\n',
+        ),
+        (
+            '    bool isConnected() const override;\n    MidiDeviceID deviceID() const override;\n\n    async::Channel<tick_t, Event> eventReceived() const override;\n',
+            '    bool isConnected() const override;\n    MidiDeviceID deviceID() const override;\n    async::Notification deviceChanged() const override;\n\n    async::Channel<tick_t, Event> eventReceived() const override;\n',
+        ),
+    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():
