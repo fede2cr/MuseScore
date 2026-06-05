@@ -43,7 +43,7 @@
 // static_assert(square(5) == 25);
 // ========================
 
-#ifndef MUSE_MODULE_DIAGNOSTICS_CRASHPAD_CLIENT
+#if !defined(MUSE_MODULE_DIAGNOSTICS_CRASHPAD_CLIENT) && !defined(Q_OS_ANDROID)
 static void crashCallback(int signum)
 {
     const char* signame = "UNKNOWN SIGNAME";
@@ -75,7 +75,7 @@ static void app_init_qrc()
 
 int main(int argc, char** argv)
 {
-#ifndef MUSE_MODULE_DIAGNOSTICS_CRASHPAD_CLIENT
+#if !defined(MUSE_MODULE_DIAGNOSTICS_CRASHPAD_CLIENT) && !defined(Q_OS_ANDROID)
     signal(SIGSEGV, crashCallback);
     signal(SIGILL, crashCallback);
     signal(SIGFPE, crashCallback);

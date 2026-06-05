@@ -152,6 +152,14 @@ jobs:
         SCCACHE_DIR="${GITHUB_WORKSPACE}/.sccache"
         mkdir -p "$SCCACHE_DIR"
 
+        echo "Cache restore matched key: ${{ steps.restore-sccache.outputs.cache-matched-key }}"
+        echo "Cache restore primary key: ${{ steps.restore-sccache.outputs.cache-primary-key }}"
+        echo "Cache hit (exact): ${{ steps.restore-sccache.outputs.cache-hit }}"
+        echo "Contents of SCCACHE_DIR ($SCCACHE_DIR):"
+        ls -la "$SCCACHE_DIR" || echo "  (empty or missing)"
+        echo "Size of SCCACHE_DIR:"
+        du -sh "$SCCACHE_DIR" 2>/dev/null || true
+
         echo "SCCACHE_PATH=$SCCACHE_PATH" | tee -a "$GITHUB_ENV"
         echo "SCCACHE_DIR=$SCCACHE_DIR" | tee -a "$GITHUB_ENV"
         echo "SCCACHE_BASE_DIR=$GITHUB_WORKSPACE" | tee -a "$GITHUB_ENV"
@@ -161,7 +169,22 @@ jobs:
         echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" | tee -a "$GITHUB_ENV"
         echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" | tee -a "$GITHUB_ENV"
 
-        sccache --zero-stats || true
+        # Start the sccache server with these env vars so it picks them up,
+        # otherwise the server may have already been spawned with defaults.
+        SCCACHE_DIR="$SCCACHE_DIR" \
+        SCCACHE_BASE_DIR="$GITHUB_WORKSPACE" \
+        SCCACHE_NOHASHDIR=true \
+        SCCACHE_CACHE_SIZE=2G \
+        "$SCCACHE_PATH" --stop-server >/dev/null 2>&1 || true
+        SCCACHE_DIR="$SCCACHE_DIR" \
+        SCCACHE_BASE_DIR="$GITHUB_WORKSPACE" \
+        SCCACHE_NOHASHDIR=true \
+        SCCACHE_CACHE_SIZE=2G \
+        "$SCCACHE_PATH" --start-server
+
+        "$SCCACHE_PATH" --zero-stats || true
+        echo "Initial sccache stats (after restore, before build):"
+        "$SCCACHE_PATH" --show-stats || true
 
     - name: Build Android artifact
       env:
