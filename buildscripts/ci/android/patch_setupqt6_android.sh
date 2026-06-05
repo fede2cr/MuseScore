@@ -188,6 +188,14 @@ for relative_path, replacements in {
             'target_link_libraries(muse_global PRIVATE ${CMAKE_DL_LIBS})\n\nif (ANDROID)\n    target_link_libraries(muse_global PRIVATE log)\nendif()\n',
         ),
     ],
+    # Pick the android-specific Main.qml when loading the main window. Without
+    # this, Q_OS_LINUX falls through to "linux" and the QML lookup fails.
+    'muse/framework/ui/internal/guiapplication.cpp': [
+        (
+            '#if defined(Q_OS_MAC)\n    QString platform = "mac";\n#elif defined(Q_OS_WIN)\n    QString platform = "win";\n#else\n    QString platform = "linux";\n#endif\n',
+            '#if defined(Q_OS_MAC)\n    QString platform = "mac";\n#elif defined(Q_OS_WIN)\n    QString platform = "win";\n#elif defined(Q_OS_ANDROID)\n    QString platform = "android";\n#else\n    QString platform = "linux";\n#endif\n',
+        ),
+    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():
