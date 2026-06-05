@@ -13,25 +13,38 @@ import re
 
 path = Path('muse/buildscripts/cmake/SetupQt6.cmake')
 text = path.read_text()
+matched = False
 
-updated, count = re.subn(
+def replace_once(current_text, pattern, replacement, *, flags=0):
+    updated_text, replacements = re.subn(pattern, replacement, current_text, count=1, flags=flags)
+    return updated_text, replacements
+
+text, replacements = replace_once(
+    text,
     r'(find_package\(\s*Qt6\b[\s\S]*?\bCOMPONENTS\b[\s\S]*?)\bDBus\b',
     r'\1',
-    text,
-    count=1,
 )
+matched = matched or replacements > 0
 
-if count == 0:
-    updated, count = re.subn(
-        r'^\s*list\(APPEND\s+qt_components\s+DBus\)\s*$\n?',
-        '',
-        text,
-        flags=re.M,
-    )
+text, replacements = replace_once(
+    text,
+    r'^\s*list\(APPEND\s+qt_components\s+DBus\)\s*$\n?',
+    '',
+    flags=re.M,
+)
+matched = matched or replacements > 0
 
-assert count != 0, 'expected DBus component declaration not found in SetupQt6.cmake'
+text, replacements = replace_once(
+    text,
+    r'^\s*list\(APPEND\s+QT_LIBRARIES\s+Qt::DBus\)\s*$\n?',
+    '',
+    flags=re.M,
+)
+matched = matched or replacements > 0
 
-path.write_text(updated)
+assert matched, 'expected DBus component declaration not found in SetupQt6.cmake'
+
+path.write_text(text)
 
 for relative_path, replacements in {
     'muse/framework/audio/driver/CMakeLists.txt': [
@@ -44,6 +57,12 @@ for relative_path, replacements in {
         (
             '    find_package(ALSA REQUIRED)\n    target_include_directories(muse_midi PRIVATE ${ALSA_INCLUDE_DIRS})\n    target_link_libraries(muse_midi PRIVATE ${ALSA_LIBRARIES} pthread)\n',
             '    if (NOT ANDROID)\n        find_package(ALSA REQUIRED)\n        target_include_directories(muse_midi PRIVATE ${ALSA_INCLUDE_DIRS})\n        target_link_libraries(muse_midi PRIVATE ${ALSA_LIBRARIES} pthread)\n    endif()\n',
+        ),
+    ],
+    'muse/framework/ui/CMakeLists.txt': [
+        (
+            '    if (OS_IS_LIN)\n        target_link_libraries(muse_ui PRIVATE Qt::DBus)\n    endif()\n',
+            '    if (NOT ANDROID && OS_IS_LIN)\n        target_link_libraries(muse_ui PRIVATE Qt::DBus)\n    endif()\n',
         ),
     ],
 }.items():
