@@ -62,7 +62,7 @@ for relative_path, replacements in {
     'muse/framework/ui/CMakeLists.txt': [
         (
             '    if (OS_IS_LIN)\n        target_link_libraries(muse_ui PRIVATE Qt::DBus)\n    endif()\n',
-            '    if (NOT ANDROID && OS_IS_LIN)\n        target_link_libraries(muse_ui PRIVATE Qt::DBus)\n    endif()\n',
+            '    if (OS_IS_LIN AND NOT ANDROID)\n        target_link_libraries(muse_ui PRIVATE Qt::DBus)\n    endif()\n',
         ),
     ],
 }.items():
