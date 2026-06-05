@@ -163,6 +163,12 @@ for relative_path, replacements in {
             '    bool isConnected() const override;\n    MidiDeviceID deviceID() const override;\n    async::Notification deviceChanged() const override;\n\n    async::Channel<tick_t, Event> eventReceived() const override;\n',
         ),
     ],
+    'muse/framework/audio/main/audiomodule.cpp': [
+        (
+            '#ifndef Q_OS_WASM\n    m_startAudioController->startAudioProcessing(mode);\n#endif\n',
+            '#if !defined(Q_OS_WASM) && !defined(Q_OS_ANDROID)\n    m_startAudioController->startAudioProcessing(mode);\n#endif\n',
+        ),
+    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():

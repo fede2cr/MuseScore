@@ -205,6 +205,10 @@ jobs:
       if: always()
       run: |
         sccache --show-stats || true
+        echo "Final SCCACHE_DIR size (this is what gets saved):"
+        du -sh "${SCCACHE_DIR:-/home/runner/work/MuseScore/MuseScore/.sccache}" 2>/dev/null || true
+        echo "Top-level entries in SCCACHE_DIR:"
+        ls -la "${SCCACHE_DIR:-/home/runner/work/MuseScore/MuseScore/.sccache}" 2>/dev/null | head -20 || true
 
     - name: Sign APK (optional)
       env:
