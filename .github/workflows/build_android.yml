@@ -1,6 +1,13 @@
 name: Build Android
 
 on:
+  push:
+    branches:
+      - main
+      - museandroid
+      - 'android/**'
+      - 'tablet/**'
+      - 'feature/android*'
   pull_request:
   workflow_dispatch:
     inputs:
