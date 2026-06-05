@@ -169,6 +169,25 @@ for relative_path, replacements in {
             '#if !defined(Q_OS_WASM) && !defined(Q_OS_ANDROID)\n    m_startAudioController->startAudioProcessing(mode);\n#endif\n',
         ),
     ],
+    # Route ConsoleLogDest output to Android logcat so muse LOG* macros become
+    # visible without needing run-as access to the app's internal data dir.
+    'muse/framework/global/thirdparty/kors_logger/src/logdefdest.cpp': [
+        (
+            '#include "logdefdest.h"\n\n#include <iostream>\n\n#ifdef _WIN32\n#include <Windows.h>\n#endif\n\nusing namespace kors::logger;\n',
+            '#include "logdefdest.h"\n\n#include <iostream>\n\n#ifdef _WIN32\n#include <Windows.h>\n#endif\n\n#ifdef __ANDROID__\n#include <android/log.h>\n#endif\n\nusing namespace kors::logger;\n',
+        ),
+        (
+            'void ConsoleLogDest::write(const LogMsg& logMsg)\n{\n    std::string log = m_layout.output(logMsg);\n\n#ifdef _WIN32\n',
+            'void ConsoleLogDest::write(const LogMsg& logMsg)\n{\n    std::string log = m_layout.output(logMsg);\n\n#ifdef __ANDROID__\n    int prio = ANDROID_LOG_INFO;\n    if (logMsg.type == Logger::ERRR) { prio = ANDROID_LOG_ERROR; }\n    else if (logMsg.type == Logger::WARN) { prio = ANDROID_LOG_WARN; }\n    else if (logMsg.type == Logger::DEBG) { prio = ANDROID_LOG_DEBUG; }\n    __android_log_print(prio, "MuseScore", "%s", log.c_str());\n    return;\n#endif\n\n#ifdef _WIN32\n',
+        ),
+    ],
+    # Link liblog on Android so __android_log_print resolves at link time.
+    'muse/framework/global/CMakeLists.txt': [
+        (
+            'target_link_libraries(muse_global PRIVATE ${CMAKE_DL_LIBS})\n',
+            'target_link_libraries(muse_global PRIVATE ${CMAKE_DL_LIBS})\n\nif (ANDROID)\n    target_link_libraries(muse_global PRIVATE log)\nendif()\n',
+        ),
+    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():
