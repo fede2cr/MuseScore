@@ -24,6 +24,8 @@
 #include <QCursor>
 #include <QPainter>
 #include <QMimeData>
+#include <QGuiApplication>
+#include <QInputMethod>
 
 #include "actions/actiontypes.h"
 #include "engraving/dom/shadownote.h"
@@ -282,12 +284,22 @@ void AbstractNotationPaintView::onLoadNotation(INotationPtr)
         setFlag(ItemAcceptsInputMethod, true);
         setFocus(false); // Remove focus once so that the IME reloads the state
         forceFocusIn();
+#ifdef Q_OS_ANDROID
+        if (QInputMethod* im = QGuiApplication::inputMethod()) {
+            im->show();
+        }
+#endif
     });
 
     interaction->textEditingEnded().onReceive(this, [this](const engraving::TextBase*) {
         setFlag(ItemAcceptsInputMethod, false);
         setFocus(false); // Remove focus once so that the IME reloads the state
         forceFocusIn();
+#ifdef Q_OS_ANDROID
+        if (QInputMethod* im = QGuiApplication::inputMethod()) {
+            im->hide();
+        }
+#endif
     });
 
     interaction->dropChanged().onNotify(this, [this]() {

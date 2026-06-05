@@ -196,6 +196,41 @@ for relative_path, replacements in {
             '#if defined(Q_OS_MAC)\n    QString platform = "mac";\n#elif defined(Q_OS_WIN)\n    QString platform = "win";\n#elif defined(Q_OS_ANDROID)\n    QString platform = "android";\n#else\n    QString platform = "linux";\n#endif\n',
         ),
     ],
+    # The QML FileDialog wrapper uses Qt.labs.platform.FileDialog which fails
+    # to instantiate on Android ("Window.window does only support types
+    # deriving from Item"). Route file/dir selection through QFileDialog on
+    # Android, like Windows/macOS. Q_OS_LINUX is defined on Android too, so
+    # change the gates to exclude Android explicitly.
+    'muse/framework/interactive/internal/interactive.cpp': [
+        (
+            '#ifdef Q_OS_LINUX\n// see QQuickPlatformFileDialog::FileMode\nenum class FileDialogMode {',
+            '#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)\n// see QQuickPlatformFileDialog::FileMode\nenum class FileDialogMode {',
+        ),
+        (
+            '#endif\n\n#ifndef Q_OS_LINUX\nstatic QString filterToString(const std::vector<std::string>& filter)',
+            '#endif\n\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\nstatic QString filterToString(const std::vector<std::string>& filter)',
+        ),
+        (
+            'async::Promise<io::path_t>\nInteractive::selectOpeningFile(const std::string& title, const io::path_t& dir,\n                                                              const std::vector<std::string>& filter)\n{\n#ifndef Q_OS_LINUX\n',
+            'async::Promise<io::path_t>\nInteractive::selectOpeningFile(const std::string& title, const io::path_t& dir,\n                                                              const std::vector<std::string>& filter)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
+        ),
+        (
+            'Interactive::selectOpeningFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                              const int options)\n{\n#ifndef Q_OS_LINUX\n',
+            'Interactive::selectOpeningFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                              const int options)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
+        ),
+        (
+            'io::paths_t Interactive::selectOpeningFilesSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                                const int options)\n{\n#ifndef Q_OS_LINUX\n',
+            'io::paths_t Interactive::selectOpeningFilesSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                                const int options)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
+        ),
+        (
+            'Interactive::selectSavingFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                             bool confirmOverwrite)\n{\n#ifndef Q_OS_LINUX\n',
+            'Interactive::selectSavingFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                             bool confirmOverwrite)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
+        ),
+        (
+            'io::path_t Interactive::selectDirectory(const std::string& title, const io::path_t& dir)\n{\n#ifndef Q_OS_LINUX\n',
+            'io::path_t Interactive::selectDirectory(const std::string& title, const io::path_t& dir)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
+        ),
+    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():
