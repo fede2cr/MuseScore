@@ -215,17 +215,130 @@ for relative_path, replacements in {
 # in this file. Q_OS_LINUX is also defined on Android, so without this every
 # selectOpening*/selectSaving*/selectDirectory call goes through the broken
 # QML dialog and silently returns an empty path.
+#
+# Additionally, QFileDialog on Android returns Storage Access Framework
+# content:// URIs (e.g. content://com.android.providers.downloads.documents/...)
+# which MuseScore cannot open as plain files and which have no extension for
+# filetype detection. Copy the SAF stream to a cache file under the app's
+# cache dir using the resolved display name so the extension is preserved,
+# and return that local path.
 interactive_cpp = Path('muse/framework/interactive/internal/interactive.cpp')
 if not interactive_cpp.exists():
     raise SystemExit(f'error: {interactive_cpp} not found')
 
 text = interactive_cpp.read_text()
+
 ifdef_new = '#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)'
 ifndef_new = '#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)'
 text, n_ifdef = re.subn(r'^#ifdef\s+Q_OS_LINUX\s*$', ifdef_new, text, flags=re.M)
 text, n_ifndef = re.subn(r'^#ifndef\s+Q_OS_LINUX\s*$', ifndef_new, text, flags=re.M)
-if n_ifdef == 0 and n_ifndef == 0:
+if n_ifdef < 1 or n_ifndef < 1:
     raise SystemExit(f'expected Q_OS_LINUX gates not found in {interactive_cpp}')
+
+# Add Qt includes used by the SAF helper. QFileDialog likely brings most of
+# these in transitively but be explicit so the build is robust.
+includes_anchor = '#include <QFileDialog>\n'
+includes_extra = (
+    '#include <QFileDialog>\n'
+    '#include <QDir>\n'
+    '#include <QFile>\n'
+    '#include <QFileInfo>\n'
+    '#include <QStandardPaths>\n'
+)
+if includes_anchor not in text:
+    raise SystemExit(f'include anchor not found in {interactive_cpp}')
+text = text.replace(includes_anchor, includes_extra, 1)
+
+# Insert the SAF helper right after filterToString().
+helper_anchor = '    return result.join(";;");\n}\n\n#endif\n'
+helper_block = (
+    '    return result.join(";;");\n'
+    '}\n'
+    '\n'
+    '#endif\n'
+    '\n'
+    '#ifdef Q_OS_ANDROID\n'
+    'static muse::io::path_t copyAndroidContentUriToCache(const QString& uri)\n'
+    '{\n'
+    '    if (!uri.startsWith(QLatin1String("content://"))) {\n'
+    '        return muse::io::path_t(uri);\n'
+    '    }\n'
+    '    QString displayName = QFileInfo(uri).fileName();\n'
+    '    if (displayName.isEmpty()) {\n'
+    '        displayName = QStringLiteral("opened_file");\n'
+    '    }\n'
+    '    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)\n'
+    '                       + QStringLiteral("/opened");\n'
+    '    QDir().mkpath(cacheDir);\n'
+    '    QString cachePath = cacheDir + QLatin1Char(\'/\') + displayName;\n'
+    '    QFile src(uri);\n'
+    '    QFile dst(cachePath);\n'
+    '    if (!src.open(QIODevice::ReadOnly) || !dst.open(QIODevice::WriteOnly | QIODevice::Truncate)) {\n'
+    '        return muse::io::path_t();\n'
+    '    }\n'
+    '    dst.write(src.readAll());\n'
+    '    return muse::io::path_t(cachePath);\n'
+    '}\n'
+    '#endif\n'
+)
+if helper_anchor not in text:
+    raise SystemExit(f'helper anchor not found in {interactive_cpp}')
+text = text.replace(helper_anchor, helper_block, 1)
+
+# Route the async selectOpeningFile result through the SAF helper on Android.
+async_anchor = '            QString file = files.first();\n            (void)resolve(file);\n'
+async_new = (
+    '            QString file = files.first();\n'
+    '#ifdef Q_OS_ANDROID\n'
+    '            (void)resolve(copyAndroidContentUriToCache(file));\n'
+    '#else\n'
+    '            (void)resolve(file);\n'
+    '#endif\n'
+)
+if async_anchor not in text:
+    raise SystemExit(f'async open anchor not found in {interactive_cpp}')
+text = text.replace(async_anchor, async_new, 1)
+
+# Route selectOpeningFileSync result through the SAF helper. Use the
+# QFileDialog::getOpenFileName line plus its trailing return as a unique
+# anchor (the bare "return result;" appears many times in this file).
+sync_anchor = (
+    '    QString result = QFileDialog::getOpenFileName(nullptr, QString::fromStdString(title), dir.toQString(), filterToString(\n'
+    '                                                      filter), nullptr, qoptions);\n'
+    '    return result;\n'
+)
+sync_new = (
+    '    QString result = QFileDialog::getOpenFileName(nullptr, QString::fromStdString(title), dir.toQString(), filterToString(\n'
+    '                                                      filter), nullptr, qoptions);\n'
+    '#ifdef Q_OS_ANDROID\n'
+    '    return copyAndroidContentUriToCache(result);\n'
+    '#else\n'
+    '    return result;\n'
+    '#endif\n'
+)
+if sync_anchor not in text:
+    raise SystemExit(f'sync open anchor not found in {interactive_cpp}')
+text = text.replace(sync_anchor, sync_new, 1)
+
+# Route selectOpeningFilesSync results through the SAF helper.
+multi_anchor = (
+    '    for (const QString& path : result) {\n'
+    '        paths.emplace_back(path);\n'
+    '    }\n'
+)
+multi_new = (
+    '    for (const QString& path : result) {\n'
+    '#ifdef Q_OS_ANDROID\n'
+    '        paths.emplace_back(copyAndroidContentUriToCache(path));\n'
+    '#else\n'
+    '        paths.emplace_back(path);\n'
+    '#endif\n'
+    '    }\n'
+)
+if multi_anchor not in text:
+    raise SystemExit(f'multi open anchor not found in {interactive_cpp}')
+text = text.replace(multi_anchor, multi_new, 1)
+
 interactive_cpp.write_text(text)
 PY
 
