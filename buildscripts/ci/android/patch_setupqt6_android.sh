@@ -32,4 +32,29 @@ if count == 0:
 assert count != 0, 'expected DBus component declaration not found in SetupQt6.cmake'
 
 path.write_text(updated)
+
+for relative_path, replacements in {
+    'muse/framework/audio/driver/CMakeLists.txt': [
+        (
+            '    find_package(ALSA REQUIRED)\n    target_link_libraries(muse_audio_driver PRIVATE ALSA::ALSA pthread)\n',
+            '    if (NOT ANDROID)\n        find_package(ALSA REQUIRED)\n        target_link_libraries(muse_audio_driver PRIVATE ALSA::ALSA pthread)\n    endif()\n',
+        ),
+    ],
+    'muse/framework/midi/CMakeLists.txt': [
+        (
+            '    find_package(ALSA REQUIRED)\n    target_include_directories(muse_midi PRIVATE ${ALSA_INCLUDE_DIRS})\n    target_link_libraries(muse_midi PRIVATE ${ALSA_LIBRARIES} pthread)\n',
+            '    if (NOT ANDROID)\n        find_package(ALSA REQUIRED)\n        target_include_directories(muse_midi PRIVATE ${ALSA_INCLUDE_DIRS})\n        target_link_libraries(muse_midi PRIVATE ${ALSA_LIBRARIES} pthread)\n    endif()\n',
+        ),
+    ],
+}.items():
+    target = Path(relative_path)
+    if not target.exists():
+        raise SystemExit(f'error: {relative_path} not found')
+
+    contents = target.read_text()
+    for old, new in replacements:
+        if old not in contents:
+            raise SystemExit(f'expected ALSA block not found in {relative_path}')
+        contents = contents.replace(old, new, 1)
+    target.write_text(contents)
 PY

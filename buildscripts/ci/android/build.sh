@@ -59,6 +59,7 @@ MUSESCORE_REVISION="$(git rev-parse --short=7 HEAD)"
 mkdir -p "$BUILD_DIR"
 
 cmake -S . -B "$BUILD_DIR" -GNinja \
+    -Wno-deprecated \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE="$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake" \
     -DQT_HOST_PATH="${QT_HOST_PATH:-$QT_ROOT_DIR}" \
