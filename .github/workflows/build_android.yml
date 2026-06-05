@@ -238,7 +238,7 @@ jobs:
           echo "Build number: ${{ steps.configure.outputs.build_number }}"
           echo
           echo "Files in build.artifacts/android:"
-          find ./build.artifacts/android -maxdepth 1 -type f -printf -- '- %f\n' | LC_ALL=C sort
+          find ./build.artifacts/android -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort | sed 's/^/- /'
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload artifacts on GitHub
