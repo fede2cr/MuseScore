@@ -100,6 +100,7 @@ int main(int argc, char** argv)
     }
 
 #ifdef Q_OS_LINUX
+#if !defined(Q_OS_ANDROID)
     if (qEnvironmentVariable("MU_QT_QPA_PLATFORM") != "offscreen") {
         qputenv("QT_QPA_PLATFORMTHEME", "gtk3");
     }
@@ -108,6 +109,7 @@ int main(int argc, char** argv)
     if (qEnvironmentVariable("MU_QT_QPA_PLATFORM") == "") {
         qputenv("QT_QPA_PLATFORM", "xcb");
     }
+#endif
 #endif
 
 #ifdef Q_OS_WIN
