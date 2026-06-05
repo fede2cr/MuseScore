@@ -97,6 +97,30 @@ for relative_path, replacements in {
             '    #elif defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)\n    std::shared_ptr<LinuxPlatformTheme> m_platformTheme;\n',
         ),
     ],
+    'muse/framework/midi/midimodule.cpp': [
+        (
+            '#if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)\n#include "internal/platform/lin/alsamidioutport.h"\n#include "internal/platform/lin/alsamidiinport.h"\n',
+            '#if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n#include "internal/platform/lin/alsamidioutport.h"\n#include "internal/platform/lin/alsamidiinport.h"\n',
+        ),
+        (
+            '    #if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)\n    m_midiOutPort = std::make_shared<AlsaMidiOutPort>();\n    m_midiInPort = std::make_shared<AlsaMidiInPort>();\n',
+            '    #if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n    m_midiOutPort = std::make_shared<AlsaMidiOutPort>();\n    m_midiInPort = std::make_shared<AlsaMidiInPort>();\n',
+        ),
+    ],
+    'muse/framework/audio/main/internal/audiodrivercontroller.cpp': [
+        (
+            '#if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)\n#include <QtEnvironmentVariables>\n#include "audio/driver/platform/lin/alsaaudiodriver.h"\n',
+            '#if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n#include <QtEnvironmentVariables>\n#include "audio/driver/platform/lin/alsaaudiodriver.h"\n',
+        ),
+        (
+            '#if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)\n    if (qEnvironmentVariableIsSet("MUSESCORE_FORCE_ALSA")) {\n',
+            '#if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n    if (qEnvironmentVariableIsSet("MUSESCORE_FORCE_ALSA")) {\n',
+        ),
+        (
+            '#if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)\n    names.push_back("ALSA");\n',
+            '#if (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)\n    names.push_back("ALSA");\n',
+        ),
+    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():
