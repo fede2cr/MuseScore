@@ -312,10 +312,12 @@ endif()
 # INSTALL
 ###########################################
 
-install(TARGETS MuseScoreStudio
-    BUNDLE  DESTINATION .
-    RUNTIME DESTINATION bin
-)
+if (NOT ANDROID)
+    install(TARGETS MuseScoreStudio
+        BUNDLE  DESTINATION .
+        RUNTIME DESTINATION bin
+    )
+endif()
 
 ###########################################
 # Windows
