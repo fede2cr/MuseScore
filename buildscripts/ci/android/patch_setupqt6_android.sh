@@ -64,6 +64,10 @@ for relative_path, replacements in {
             '    if (OS_IS_LIN)\n        target_link_libraries(muse_ui PRIVATE Qt::DBus)\n    endif()\n',
             '    if (OS_IS_LIN AND NOT ANDROID)\n        target_link_libraries(muse_ui PRIVATE Qt::DBus)\n    endif()\n',
         ),
+        (
+            'elseif(OS_IS_LIN)\n    target_sources(muse_ui PRIVATE\n        internal/platform/linux/linuxplatformtheme.cpp\n        internal/platform/linux/linuxplatformtheme.h\n    )\n',
+            'elseif(OS_IS_LIN AND NOT ANDROID)\n    target_sources(muse_ui PRIVATE\n        internal/platform/linux/linuxplatformtheme.cpp\n        internal/platform/linux/linuxplatformtheme.h\n    )\n',
+        ),
     ],
 }.items():
     target = Path(relative_path)
@@ -73,7 +77,7 @@ for relative_path, replacements in {
     contents = target.read_text()
     for old, new in replacements:
         if old not in contents:
-            raise SystemExit(f'expected ALSA block not found in {relative_path}')
+            raise SystemExit(f'expected patch target not found in {relative_path}')
         contents = contents.replace(old, new, 1)
     target.write_text(contents)
 PY
