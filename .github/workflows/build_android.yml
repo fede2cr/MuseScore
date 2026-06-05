@@ -8,7 +8,7 @@ on:
       - 'android/**'
       - 'tablet/**'
       - 'feature/android*'
-  pull_request:
+  pull_request: {}
   workflow_dispatch:
     inputs:
       build_mode:
@@ -88,6 +88,11 @@ jobs:
       run: |
         git submodule sync --recursive
         git submodule update --init --recursive
+
+    - name: Disable DBus requirement on Android
+      run: |
+        set -euo pipefail
+        bash ./buildscripts/ci/android/patch_setupqt6_android.sh
 
     - name: Configure workflow
       id: configure
