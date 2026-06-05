@@ -196,41 +196,6 @@ for relative_path, replacements in {
             '#if defined(Q_OS_MAC)\n    QString platform = "mac";\n#elif defined(Q_OS_WIN)\n    QString platform = "win";\n#elif defined(Q_OS_ANDROID)\n    QString platform = "android";\n#else\n    QString platform = "linux";\n#endif\n',
         ),
     ],
-    # The QML FileDialog wrapper uses Qt.labs.platform.FileDialog which fails
-    # to instantiate on Android ("Window.window does only support types
-    # deriving from Item"). Route file/dir selection through QFileDialog on
-    # Android, like Windows/macOS. Q_OS_LINUX is defined on Android too, so
-    # change the gates to exclude Android explicitly.
-    'muse/framework/interactive/internal/interactive.cpp': [
-        (
-            '#ifdef Q_OS_LINUX\n// see QQuickPlatformFileDialog::FileMode\nenum class FileDialogMode {',
-            '#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)\n// see QQuickPlatformFileDialog::FileMode\nenum class FileDialogMode {',
-        ),
-        (
-            '#endif\n\n#ifndef Q_OS_LINUX\nstatic QString filterToString(const std::vector<std::string>& filter)',
-            '#endif\n\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\nstatic QString filterToString(const std::vector<std::string>& filter)',
-        ),
-        (
-            'async::Promise<io::path_t>\nInteractive::selectOpeningFile(const std::string& title, const io::path_t& dir,\n                                                              const std::vector<std::string>& filter)\n{\n#ifndef Q_OS_LINUX\n',
-            'async::Promise<io::path_t>\nInteractive::selectOpeningFile(const std::string& title, const io::path_t& dir,\n                                                              const std::vector<std::string>& filter)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
-        ),
-        (
-            'Interactive::selectOpeningFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                              const int options)\n{\n#ifndef Q_OS_LINUX\n',
-            'Interactive::selectOpeningFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                              const int options)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
-        ),
-        (
-            'io::paths_t Interactive::selectOpeningFilesSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                                const int options)\n{\n#ifndef Q_OS_LINUX\n',
-            'io::paths_t Interactive::selectOpeningFilesSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                                const int options)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
-        ),
-        (
-            'Interactive::selectSavingFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                             bool confirmOverwrite)\n{\n#ifndef Q_OS_LINUX\n',
-            'Interactive::selectSavingFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,\n                                             bool confirmOverwrite)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
-        ),
-        (
-            'io::path_t Interactive::selectDirectory(const std::string& title, const io::path_t& dir)\n{\n#ifndef Q_OS_LINUX\n',
-            'io::path_t Interactive::selectDirectory(const std::string& title, const io::path_t& dir)\n{\n#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)\n',
-        ),
-    ],
 }.items():
     target = Path(relative_path)
     if not target.exists():
@@ -242,4 +207,25 @@ for relative_path, replacements in {
             raise SystemExit(f'expected patch target not found in {relative_path}')
         contents = contents.replace(old, new, 1)
     target.write_text(contents)
+
+# The QML FileDialog wrapper uses Qt.labs.platform.FileDialog which fails to
+# instantiate on Android ("Window.window does only support types deriving from
+# Item"). Route file/dir selection through QFileDialog on Android (same as
+# Windows/macOS) by excluding Android from every Q_OS_LINUX file-dialog gate
+# in this file. Q_OS_LINUX is also defined on Android, so without this every
+# selectOpening*/selectSaving*/selectDirectory call goes through the broken
+# QML dialog and silently returns an empty path.
+interactive_cpp = Path('muse/framework/interactive/internal/interactive.cpp')
+if not interactive_cpp.exists():
+    raise SystemExit(f'error: {interactive_cpp} not found')
+
+text = interactive_cpp.read_text()
+ifdef_new = '#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)'
+ifndef_new = '#if !defined(Q_OS_LINUX) || defined(Q_OS_ANDROID)'
+text, n_ifdef = re.subn(r'^#ifdef\s+Q_OS_LINUX\s*$', ifdef_new, text, flags=re.M)
+text, n_ifndef = re.subn(r'^#ifndef\s+Q_OS_LINUX\s*$', ifndef_new, text, flags=re.M)
+if n_ifdef == 0 and n_ifndef == 0:
+    raise SystemExit(f'expected Q_OS_LINUX gates not found in {interactive_cpp}')
+interactive_cpp.write_text(text)
 PY
+
