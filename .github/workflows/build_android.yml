@@ -84,6 +84,11 @@ jobs:
         path: muse
         submodules: recursive
 
+    - name: Sync and update submodules
+      run: |
+        git submodule sync --recursive
+        git submodule update --init --recursive
+
     - name: Configure workflow
       id: configure
       run: |
