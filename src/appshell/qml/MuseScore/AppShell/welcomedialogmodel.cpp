@@ -22,6 +22,8 @@
 
 #include "welcomedialogmodel.h"
 
+#include "app_config.h"
+
 #include "translation.h"
 #include "log.h"
 
@@ -64,7 +66,11 @@ static std::vector<QVariantMap> welcomeDialogData()
     item4.insert("destinationUrl",
                  "https://www.youtube.com/playlist?list=PLTYuWi2LmaPECOZrC6bkPHBkYY9_WEexT&utm_source=mss-app-welcome-tutorials&utm_medium=mss-app-welcome-tutorials&utm_campaign=mss-app-welcome-tutorials&utm_id=mss-app-welcome-tutorials");
 
+#if defined(MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE)
+    return { item1, item3 };
+#else
     return { item1, item2, item3, item4 };
+#endif
 }
 
 WelcomeDialogModel::WelcomeDialogModel()

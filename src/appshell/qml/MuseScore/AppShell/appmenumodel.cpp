@@ -24,6 +24,7 @@
 #include "types/translatablestring.h"
 
 #include "muse_framework_config.h"
+#include "app_config.h"
 
 #ifdef MUSE_MODULE_WORKSPACE
 #include "workspace/qml/Muse/Workspace/workspacesmenumodel.h"
@@ -204,9 +205,7 @@ MenuItem* AppMenuModel::makeFileMenu()
         makeSeparator(),
         makeMenuItem("file-save"),
         makeMenuItem("file-save-as"),
-        makeMenuItem("file-save-to-cloud"),
         makeMenu(TranslatableString("appshell/menu/file", "Save o&ther"), makeSaveOtherSubItems()),
-        makeMenu(TranslatableString("appshell/menu/file", "Pu&blish online"), makePublishOnlineSubItems()),
         makeSeparator(),
         makeMenuItem("file-import-pdf"),
         makeMenuItem("file-export"),
@@ -218,6 +217,11 @@ MenuItem* AppMenuModel::makeFileMenu()
         makeSeparator(),
         makeMenuItem("quit", MenuItemRole::QuitRole)
     };
+
+#if !defined(MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE)
+    fileItems.insert(7, makeMenuItem("file-save-to-cloud"));
+    fileItems.insert(9, makeMenu(TranslatableString("appshell/menu/file", "Pu&blish online"), makePublishOnlineSubItems()));
+#endif
 
     return makeMenu(TranslatableString("appshell/menu/file", "&File"), fileItems, "menu-file");
 }

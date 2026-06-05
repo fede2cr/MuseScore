@@ -28,6 +28,8 @@ qt_add_qml_module(appshell_qml
         aboutmodel.h
         appmenumodel.cpp
         appmenumodel.h
+        buildvariantmodel.cpp
+        buildvariantmodel.h
         DevTools/Settings/settingslistmodel.cpp
         DevTools/Settings/settingslistmodel.h
         FirstLaunchSetup/firstlaunchsetupmodel.cpp
@@ -121,6 +123,11 @@ elseif(OS_IS_WIN)
             platform/win/AppSystemButtons.qml
             platform/win/AppTitleBar.qml
             platform/win/Main.qml
+    )
+elseif(ANDROID)
+    qt_target_qml_sources(appshell_qml
+        QML_FILES
+            platform/android/Main.qml
     )
 elseif(OS_IS_LIN OR OS_IS_FREEBSD)
     qt_target_qml_sources(appshell_qml 

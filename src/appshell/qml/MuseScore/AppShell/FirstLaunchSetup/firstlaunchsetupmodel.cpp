@@ -21,8 +21,11 @@
  */
 #include "firstlaunchsetupmodel.h"
 
+#include "app_config.h"
+
 #include "translation.h"
 #include "global/async/async.h"
+#include <QtGlobal>
 
 using namespace muse;
 using namespace mu;
@@ -33,9 +36,12 @@ FirstLaunchSetupModel::FirstLaunchSetupModel(QObject* parent)
 {
     m_pages = {
         Page { "ThemesPage.qml", "musescore://notation" },
-        Page { "PlaybackPage.qml", "musescore://notation" },
-        Page { "TutorialsPage.qml", "musescore://home?section=learn" }
+        Page { "PlaybackPage.qml", "musescore://notation" }
     };
+
+#if !defined(Q_OS_ANDROID) || !defined(MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE)
+    m_pages.push_back(Page { "TutorialsPage.qml", "musescore://home?section=learn" });
+#endif
 }
 
 void FirstLaunchSetupModel::load()

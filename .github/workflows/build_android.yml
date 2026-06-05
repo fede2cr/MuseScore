@@ -1,0 +1,190 @@
+name: Build Android
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Build mode: devel, nightly, testing, stable'
+        default: 'devel'
+        required: true
+  workflow_call:
+    inputs:
+      build_mode:
+        description: 'Build mode: devel, nightly, testing, stable'
+        default: 'devel'
+        type: string
+        required: true
+      build_number:
+        description: 'Build number (if not provided, will be generated)'
+        default: ''
+        type: string
+        required: false
+      app_repo:
+        description: 'owner/repo to source MuseScore from (default: this repo)'
+        type: string
+        required: false
+        default: ''
+      app_ref:
+        description: 'MuseScore ref to check out (default: ref of triggering event)'
+        type: string
+        required: false
+        default: ''
+      framework_repo:
+        description: 'owner/repo to source muse_framework from (default: pinned submodule)'
+        type: string
+        required: false
+        default: ''
+      framework_ref:
+        description: 'Ref to check out into the muse_framework submodule (default: pinned SHA)'
+        type: string
+        required: false
+        default: ''
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }} ${{ github.event_name }} ${{ github.ref }} android
+  cancel-in-progress: true
+
+jobs:
+  android_arm64:
+    runs-on: ubuntu-24.04
+    env:
+      QT_VERSION: 6.10.2
+      QT_ANDROID_ARCH: android_arm64_v8a
+    steps:
+    - name: Clone repository
+      uses: actions/checkout@v6
+      with:
+        repository: ${{ inputs.app_repo || github.repository }}
+        ref: ${{ inputs.app_ref || github.ref }}
+        submodules: recursive
+
+    - name: Override muse_framework
+      if: ${{ inputs.framework_ref != '' && inputs.framework_repo != '' }}
+      uses: actions/checkout@v6
+      with:
+        repository: ${{ inputs.framework_repo }}
+        ref: ${{ inputs.framework_ref }}
+        path: muse
+        submodules: recursive
+
+    - name: Configure workflow
+      id: configure
+      run: |
+        bash ./buildscripts/ci/tools/make_build_mode_env.sh -e ${{ github.event_name }} -m ${{ inputs.build_mode }}
+        if [ -n "${{ inputs.build_number }}" ]; then
+          bash ./buildscripts/ci/tools/make_build_number.sh "${{ inputs.build_number }}"
+        else
+          bash ./buildscripts/ci/tools/make_build_number.sh
+        fi
+        BUILD_NUMBER=$(cat ./build.artifacts/env/build_number.env)
+        UPLOAD_ARTIFACT_NAME="MU4_${BUILD_NUMBER}_Android_arm64"
+        echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+        echo "upload_artifact_name=$UPLOAD_ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android NDK
+      run: |
+        sdkmanager --install "ndk;28.0.12916984" "build-tools;35.0.0" "platforms;android-35"
+        echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" | tee -a $GITHUB_ENV
+        echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/28.0.12916984" | tee -a $GITHUB_ENV
+
+    - name: Install Qt for Android
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: linux
+        target: android
+        arch: ${{ env.QT_ANDROID_ARCH }}
+        modules: 'qt5compat qtnetworkauth qtshadertools qtwebsockets'
+        cache: true
+
+    - name: Build Android artifact
+      env:
+        QT_ROOT_DIR: ${{ env.QT_ROOT_DIR }}
+      run: |
+        chmod +x ./buildscripts/ci/android/build.sh
+        bash ./buildscripts/ci/android/build.sh -n ${{ steps.configure.outputs.build_number }} --build_mode ${{ inputs.build_mode }}
+
+    - name: Sign APK (optional)
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ] || [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ]; then
+          echo "Signing secrets are not fully configured, skipping APK signing"
+          exit 0
+        fi
+
+        KEYSTORE_PATH="$RUNNER_TEMP/android-release.keystore"
+        echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+
+        APK_PATH="$(find ./build.artifacts/android -type f -name "*.apk" | head -n 1 || true)"
+        if [ -z "$APK_PATH" ]; then
+          echo "No APK found for signing, skipping"
+          exit 0
+        fi
+
+        BUILD_TOOLS_DIR="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+        ALIGNED_APK="${APK_PATH%.apk}-aligned.apk"
+        SIGNED_APK="${APK_PATH%.apk}-signed.apk"
+
+        "$BUILD_TOOLS_DIR/zipalign" -f -p 4 "$APK_PATH" "$ALIGNED_APK"
+        "$BUILD_TOOLS_DIR/apksigner" sign \
+          --ks "$KEYSTORE_PATH" \
+          --ks-key-alias "$ANDROID_KEY_ALIAS" \
+          --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+          --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+          --out "$SIGNED_APK" \
+          "$ALIGNED_APK"
+
+        "$BUILD_TOOLS_DIR/apksigner" verify "$SIGNED_APK"
+
+    - name: Build checksums and artifact summary
+      run: |
+        set -euo pipefail
+
+        if [ ! -d ./build.artifacts/android ]; then
+          echo "error: ./build.artifacts/android not found" >&2
+          exit 1
+        fi
+
+        (cd ./build.artifacts/android && sha256sum ./* > checksums.sha256)
+
+        {
+          echo "### Android Build Outputs"
+          echo
+          echo "Build number: ${{ steps.configure.outputs.build_number }}"
+          echo
+          echo "Files in build.artifacts/android:"
+          find ./build.artifacts/android -maxdepth 1 -type f -printf -- '- %f\n' | LC_ALL=C sort
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload artifacts on GitHub
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.configure.outputs.upload_artifact_name }}
+        path: ./build.artifacts/android/
+        if-no-files-found: error
+        retention-days: 14

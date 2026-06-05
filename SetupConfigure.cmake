@@ -42,6 +42,23 @@ string(TOUPPER ${MUSESCORE_BUILD_CONFIGURATION} BUILD_CONFIGURATION)
 string(TOUPPER ${MUSE_APP_BUILD_MODE} BUILD_MODE)
 
 ###########################################
+# Android tablet desktop-style build switch
+###########################################
+# This flag is the primary gate for the Android variant that should behave like
+# desktop notation software (without learn/account-first onboarding).
+if ((ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Android" OR OS_IS_ANDROID) AND BUILD_CONFIGURATION STREQUAL "APP")
+    if (NOT DEFINED MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE)
+        set(MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE ON)
+    endif()
+else()
+    if (NOT DEFINED MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE)
+        set(MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE OFF)
+    endif()
+endif()
+
+message(STATUS "MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE: ${MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE}")
+
+###########################################
 # Setup by mode
 ###########################################
 if(BUILD_MODE STREQUAL "DEV")

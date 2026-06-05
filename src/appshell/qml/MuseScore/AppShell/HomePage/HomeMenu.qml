@@ -35,6 +35,8 @@ Item {
 
     property string currentPageName: ""
     property bool iconsOnly: false
+    property bool showAccount: true
+    property bool showLearn: true
 
     signal selected(string name)
 
@@ -62,6 +64,9 @@ Item {
         spacing: 0
 
         AccountInfoButton {
+            visible: root.showAccount
+            enabled: root.showAccount
+
             Layout.fillWidth: true
             Layout.preferredHeight: 60
             Layout.topMargin: 20
@@ -92,7 +97,9 @@ Item {
                 { "name": "extensions", "title": qsTrc("appshell", "Plugins"), "iconCode":  IconCode.PLUGIN },
                 { "name": "musesounds", "title": qsTrc("appshell", "MuseSounds"), "iconCode": IconCode.PLAY },
                 { "name": "learn", "title": qsTrc("appshell", "Learn"), "iconCode":  IconCode.MORTAR_BOARD }
-            ]
+            ].filter(function(item) {
+                return root.showLearn || item.name !== "learn"
+            })
 
             currentIndex: 0
 

@@ -38,11 +38,16 @@ DockPage {
 
     property string section: "scores"
     property string subSection: ""
+    readonly property bool isAndroidDesktopTabletVariant: buildVariant.androidTabletDesktopExperience
 
     property var window: null
 
     objectName: "Home"
     uri: "musescore://home"
+
+    BuildVariantModel {
+        id: buildVariant
+    }
 
     onSetParamsRequested: function(params) {
         if (Boolean(params["section"])) {
@@ -70,8 +75,12 @@ DockPage {
         case "plugins": root.central = extensionsComp; break // backward compatibility
         case "extensions": root.central = extensionsComp; break
         case "musesounds": root.central = museSoundsComp; break
-        case "learn": root.central = learnComp; break
-        case "account": root.central = accountComp; break
+        case "learn":
+            root.central = root.isAndroidDesktopTabletVariant ? scoresComp : learnComp
+            break
+        case "account":
+            root.central = root.isAndroidDesktopTabletVariant ? scoresComp : accountComp
+            break
         }
     }
 
@@ -98,6 +107,8 @@ DockPage {
             HomeMenu {
                 currentPageName: root.section
                 iconsOnly: menuPanel.iconsOnly
+                showAccount: !root.isAndroidDesktopTabletVariant
+                showLearn: !root.isAndroidDesktopTabletVariant
 
                 onSelected: function(name) {
                     root.setCurrentCentral(name)

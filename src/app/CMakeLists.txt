@@ -412,6 +412,21 @@ elseif(OS_IS_MAC)
     )
 
 ###########################################
+# Android
+###########################################
+elseif(ANDROID)
+
+    # Let Qt generate the Android deployment script so CI/local builds can
+    # produce installable artifacts (apk/aab targets).
+    qt_generate_deploy_qml_app_script(
+        TARGET MuseScoreStudio
+        OUTPUT_SCRIPT deploy_script
+        NO_UNSUPPORTED_PLATFORM_ERROR
+    )
+
+    install(SCRIPT ${deploy_script})
+
+###########################################
 # Wasm
 ###########################################
 elseif(OS_IS_WASM)

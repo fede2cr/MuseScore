@@ -27,6 +27,7 @@
 #include "ui/view/iconcodes.h"
 
 #include "muse_framework_config.h"
+#include "app_config.h"
 
 using namespace mu::preferences;
 using namespace muse::ui;
@@ -162,9 +163,10 @@ void PreferencesModel::load(const QString& currentPageId)
 
         makeItem("canvas", QT_TRANSLATE_NOOP("preferences", "Canvas"), IconCode::Code::NEW_FILE,
                  "Preferences/CanvasPreferencesPage.qml"),
-
+    #if !defined(MUE_ANDROID_TABLET_DESKTOP_EXPERIENCE)
         makeItem("cloud", QT_TRANSLATE_NOOP("preferences", "Save & publish"), IconCode::Code::CLOUD_FILE,
-                 "Preferences/SaveAndPublishPreferencesPage.qml"),
+             "Preferences/SaveAndPublishPreferencesPage.qml"),
+    #endif
 
         makeItem("note-input", QT_TRANSLATE_NOOP("preferences", "Note input"), IconCode::Code::EDIT,
                  "Preferences/NoteInputPreferencesPage.qml"),
