@@ -1,5 +1,3 @@
-#ifdef Q_OS_ANDROID
-
 #include "android_soundfont.h"
 
 #include <QDir>
@@ -44,5 +42,3 @@ void extractBundledSoundfont()
 }
 
 } // namespace mu::app
-
-#endif // Q_OS_ANDROID
