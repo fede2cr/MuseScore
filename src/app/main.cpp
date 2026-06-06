@@ -34,6 +34,10 @@
 #include "muse_framework_config.h"
 #include "app_config.h"
 
+#ifdef Q_OS_ANDROID
+#include "android/android_soundfont.h"
+#endif
+
 #include "log.h"
 
 // C++20 check
@@ -70,6 +74,10 @@ static void app_init_qrc()
 
 #ifdef Q_OS_WIN
     Q_INIT_RESOURCE(app_win);
+#endif
+
+#ifdef Q_OS_ANDROID
+    Q_INIT_RESOURCE(android_soundfont);
 #endif
 }
 
@@ -180,6 +188,12 @@ int main(int argc, char** argv)
 
     std::shared_ptr<MuseScoreCmdOptions> opt = std::make_shared<MuseScoreCmdOptions>();
     opt->runMode = IApplication::RunMode::GuiApp;
+#endif
+
+#ifdef Q_OS_ANDROID
+    // Stage bundled default soundfont into writable storage so the synth can
+    // find it during audio module init.
+    mu::app::extractBundledSoundfont();
 #endif
 
     // ====================================================

@@ -205,6 +205,11 @@ qt_add_resources(APP_RCC_SOURCES app.qrc)
 if (OS_IS_WIN)
     qt_add_resources(APP_RCC_SOURCES app_win.qrc)
 endif()
+if (ANDROID)
+    # Embed the default MS Basic soundfont as a Qt resource so the app can
+    # extract it to writable storage on first launch and feed it to the synth.
+    qt_add_resources(APP_RCC_SOURCES android/android_soundfont.qrc)
+endif()
 
 ###########################################
 # Executable declaration
@@ -230,6 +235,13 @@ endif()
 
 if (CC_IS_EMCC)
     set(APP_SRC ${APP_SRC} webapi_export.cpp)
+endif()
+
+if (ANDROID)
+    set(APP_SRC ${APP_SRC}
+        android/android_soundfont.cpp
+        android/android_soundfont.h
+    )
 endif()
 
 qt_add_executable(MuseScoreStudio

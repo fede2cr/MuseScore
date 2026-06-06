@@ -1,0 +1,6 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/android">
+        <file alias="sound/MS Basic.sf3">../../../share/sound/MS Basic.sf3</file>
+    </qresource>
+</RCC>

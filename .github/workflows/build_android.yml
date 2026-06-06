@@ -8,6 +8,8 @@ on:
       - 'android/**'
       - 'tablet/**'
       - 'feature/android*'
+    tags:
+      - 'android-v*'
   pull_request: {}
   workflow_dispatch:
     inputs:
@@ -61,6 +63,9 @@ concurrency:
   group: ${{ github.workflow }} ${{ github.event_name }} ${{ github.ref }} android
   cancel-in-progress: true
 
+permissions:
+  contents: write   # required by softprops/action-gh-release on tag pushes
+
 jobs:
   android_arm64:
     runs-on: ubuntu-24.04
@@ -97,8 +102,24 @@ jobs:
     - name: Configure workflow
       id: configure
       run: |
+        set -euo pipefail
+
+        IS_TAG_RELEASE=false
+        RELEASE_VERSION=""
+        if [ "${{ github.ref_type }}" = "tag" ] && [[ "${{ github.ref_name }}" == android-v* ]]; then
+          IS_TAG_RELEASE=true
+          RELEASE_VERSION="${{ github.ref_name }}"
+          RELEASE_VERSION="${RELEASE_VERSION#android-v}"
+        fi
+
         BUILD_MODE="${{ inputs.build_mode }}"
-        BUILD_MODE="${BUILD_MODE:-devel}"
+        if [ "$IS_TAG_RELEASE" = "true" ]; then
+          # Tag pushes are always release builds, regardless of input.
+          BUILD_MODE="stable"
+        else
+          BUILD_MODE="${BUILD_MODE:-devel}"
+        fi
+
         bash ./buildscripts/ci/tools/make_build_mode_env.sh -e ${{ github.event_name }} -m "$BUILD_MODE"
         if [ -n "${{ inputs.build_number }}" ]; then
           bash ./buildscripts/ci/tools/make_build_number.sh "${{ inputs.build_number }}"
@@ -106,9 +127,21 @@ jobs:
           bash ./buildscripts/ci/tools/make_build_number.sh
         fi
         BUILD_NUMBER=$(cat ./build.artifacts/env/build_number.env)
-        UPLOAD_ARTIFACT_NAME="MU4_${BUILD_NUMBER}_Android_arm64"
+
+        if [ "$IS_TAG_RELEASE" = "true" ]; then
+          UPLOAD_ARTIFACT_NAME="MuseScore_${RELEASE_VERSION}_Android_arm64"
+        else
+          UPLOAD_ARTIFACT_NAME="MU4_${BUILD_NUMBER}_Android_arm64"
+        fi
+
+        echo "build_mode=$BUILD_MODE" >> $GITHUB_OUTPUT
         echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
         echo "upload_artifact_name=$UPLOAD_ARTIFACT_NAME" >> $GITHUB_OUTPUT
+        echo "is_tag_release=$IS_TAG_RELEASE" >> $GITHUB_OUTPUT
+        echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
+
+        # Expose BUILD_MODE to subsequent steps that read it from the env.
+        echo "BUILD_MODE=$BUILD_MODE" >> $GITHUB_ENV
 
     - name: Setup Java
       uses: actions/setup-java@v4
@@ -220,6 +253,10 @@ jobs:
         set -euo pipefail
 
         if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ] || [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ]; then
+          if [ "${{ steps.configure.outputs.is_tag_release }}" = "true" ]; then
+            echo "error: signing secrets are required for tag releases (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD)" >&2
+            exit 1
+          fi
           echo "Signing secrets are not fully configured, skipping APK signing"
           exit 0
         fi
@@ -275,6 +312,20 @@ jobs:
         path: ./build.artifacts/android/
         if-no-files-found: error
         retention-days: 14
+
+    - name: Create GitHub Release
+      if: steps.configure.outputs.is_tag_release == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: MuseScore Android ${{ steps.configure.outputs.release_version }}
+        draft: true
+        prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+        generate_release_notes: true
+        fail_on_unmatched_files: true
+        files: |
+          build.artifacts/android/*-signed.apk
+          build.artifacts/android/checksums.sha256
 
     - name: Prepare sccache files for saving
       id: prepare-save-sccache
