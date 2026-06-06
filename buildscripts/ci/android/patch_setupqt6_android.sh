@@ -166,7 +166,7 @@ for relative_path, replacements in {
     'muse/framework/audio/main/audiomodule.cpp': [
         (
             '#ifndef Q_OS_WASM\n    m_startAudioController->startAudioProcessing(mode);\n#endif\n',
-            '#if !defined(Q_OS_WASM) && !defined(Q_OS_ANDROID)\n    m_startAudioController->startAudioProcessing(mode);\n#endif\n',
+            '#if !defined(Q_OS_WASM)\n    m_startAudioController->startAudioProcessing(mode);\n#endif\n',
         ),
     ],
     # Route ConsoleLogDest output to Android logcat so muse LOG* macros become
@@ -340,5 +340,320 @@ if multi_anchor not in text:
 text = text.replace(multi_anchor, multi_new, 1)
 
 interactive_cpp.write_text(text)
+
+# --- Android audio playback support ---------------------------------------
+#
+# Upstream muse has no Android audio driver, only ALSA / WASAPI / CoreAudio /
+# WebAudio. With ALSA excluded, AudioDriverController::createDriver returns
+# nothing on Android, so playback is dead and we had to skip startAudioProcessing
+# entirely.
+#
+# Add a QAudioSink-based driver (QtMultimedia) so the synthesizer can push
+# float32 audio out to the device speakers. Qt for Android maps QAudioSink to
+# AAudio/OpenSL ES under the hood, no extra permissions are required for
+# audio output.
+
+# 1. Make sure SetupQt6.cmake pulls in Qt6::Multimedia on Android.
+setup_qt6_path = Path('muse/buildscripts/cmake/SetupQt6.cmake')
+setup_qt6_text = setup_qt6_path.read_text()
+multimedia_anchor = 'find_package(Qt6 6.8 REQUIRED COMPONENTS ${qt_components})'
+multimedia_block = (
+    'if (ANDROID)\n'
+    '    list(APPEND qt_components Multimedia)\n'
+    '    list(APPEND QT_LIBRARIES Qt::Multimedia)\n'
+    'endif()\n'
+    '\n'
+    'find_package(Qt6 6.8 REQUIRED COMPONENTS ${qt_components})'
+)
+if multimedia_anchor not in setup_qt6_text:
+    raise SystemExit('Multimedia anchor not found in SetupQt6.cmake')
+setup_qt6_text = setup_qt6_text.replace(multimedia_anchor, multimedia_block, 1)
+setup_qt6_path.write_text(setup_qt6_text)
+
+# 2. Drop the Qt-based driver source files into muse.
+android_audio_dir = Path('muse/framework/audio/driver/platform/android')
+android_audio_dir.mkdir(parents=True, exist_ok=True)
+
+qt_driver_h = '''/*
+ * SPDX-License-Identifier: GPL-3.0-only
+ * MuseScore-CLA-applies
+ */
+#pragma once
+
+#include <memory>
+
+#include "audio/iaudiodriver.h"
+#include "global/async/asyncable.h"
+
+class QAudioSink;
+class QIODevice;
+
+namespace muse::audio {
+class QtAudioDriver : public IAudioDriver, public muse::async::Asyncable
+{
+public:
+    QtAudioDriver();
+    ~QtAudioDriver() override;
+
+    void init() override;
+    std::string name() const override;
+    AudioDeviceID defaultDevice() const override;
+
+    bool open(const Spec& spec, Spec* activeSpec) override;
+    void close() override;
+    bool isOpened() const override;
+
+    const Spec& activeSpec() const override;
+    async::Channel<Spec> activeSpecChanged() const override;
+
+    std::vector<samples_t> availableOutputDeviceBufferSizes() const override;
+    std::vector<sample_rate_t> availableOutputDeviceSampleRates() const override;
+    AudioDeviceList availableOutputDevices() const override;
+    async::Notification availableOutputDevicesChanged() const override;
+
+private:
+    class CallbackDevice;
+    std::unique_ptr<QAudioSink> m_sink;
+    std::unique_ptr<CallbackDevice> m_device;
+    Spec m_activeSpec;
+    bool m_isOpened = false;
+    async::Channel<Spec> m_activeSpecChanged;
+    async::Notification m_availableOutputDevicesChanged;
+};
+}
+'''
+
+qt_driver_cpp = r'''/*
+ * SPDX-License-Identifier: GPL-3.0-only
+ * MuseScore-CLA-applies
+ */
+#include "qtaudiodriver.h"
+
+#include <algorithm>
+#include <cstring>
+#include <limits>
+#include <vector>
+
+#include <QAudioFormat>
+#include <QAudioSink>
+#include <QIODevice>
+#include <QMediaDevices>
+
+#include "log.h"
+
+using namespace muse::audio;
+
+class QtAudioDriver::CallbackDevice : public QIODevice
+{
+public:
+    CallbackDevice(Callback cb, std::size_t frameBytes)
+        : m_cb(std::move(cb)), m_buf(frameBytes), m_bufPos(frameBytes) {}
+
+protected:
+    qint64 readData(char* data, qint64 maxlen) override
+    {
+        if (!m_cb || maxlen <= 0) {
+            if (maxlen > 0) {
+                std::memset(data, 0, static_cast<std::size_t>(maxlen));
+            }
+            return maxlen;
+        }
+        qint64 written = 0;
+        while (written < maxlen) {
+            if (m_bufPos >= m_buf.size()) {
+                m_cb(m_buf.data(), static_cast<int>(m_buf.size()));
+                m_bufPos = 0;
+            }
+            const qint64 toCopy = std::min<qint64>(
+                maxlen - written, static_cast<qint64>(m_buf.size() - m_bufPos));
+            std::memcpy(data + written, m_buf.data() + m_bufPos,
+                        static_cast<std::size_t>(toCopy));
+            m_bufPos += static_cast<std::size_t>(toCopy);
+            written += toCopy;
+        }
+        return written;
+    }
+    qint64 writeData(const char*, qint64) override { return 0; }
+    qint64 bytesAvailable() const override
+    {
+        return std::numeric_limits<qint64>::max() / 2;
+    }
+
+private:
+    Callback m_cb;
+    std::vector<std::uint8_t> m_buf;
+    std::size_t m_bufPos;
+};
+
+QtAudioDriver::QtAudioDriver() = default;
+QtAudioDriver::~QtAudioDriver() { close(); }
+
+void QtAudioDriver::init() {}
+
+std::string QtAudioDriver::name() const { return "QtAudio"; }
+
+AudioDeviceID QtAudioDriver::defaultDevice() const { return "default"; }
+
+bool QtAudioDriver::open(const Spec& spec, Spec* activeSpec)
+{
+    if (m_isOpened) {
+        close();
+    }
+    if (!spec.isValid()) {
+        LOGE() << "QtAudioDriver: invalid spec";
+        return false;
+    }
+
+    QAudioFormat format;
+    format.setSampleRate(static_cast<int>(spec.output.sampleRate));
+    format.setChannelCount(static_cast<int>(spec.output.audioChannelCount));
+    format.setSampleFormat(QAudioFormat::Float);
+
+    const QAudioDevice device = QMediaDevices::defaultAudioOutput();
+    if (!device.isFormatSupported(format)) {
+        LOGW() << "QtAudioDriver: float format not natively supported, Qt will resample";
+    }
+
+    const std::size_t frameBytes
+        = static_cast<std::size_t>(spec.output.samplesPerChannel)
+          * static_cast<std::size_t>(spec.output.audioChannelCount)
+          * sizeof(float);
+
+    m_device = std::make_unique<CallbackDevice>(spec.callback, frameBytes);
+    m_device->open(QIODevice::ReadOnly);
+
+    m_sink = std::make_unique<QAudioSink>(device, format);
+    // Give Qt ~4 audio frames of buffering. Too small => underruns / stutter.
+    m_sink->setBufferSize(static_cast<int>(frameBytes) * 4);
+    m_sink->start(m_device.get());
+
+    m_activeSpec = spec;
+    m_isOpened = true;
+    if (activeSpec) {
+        *activeSpec = spec;
+    }
+    LOGI() << "QtAudioDriver: opened sampleRate=" << spec.output.sampleRate
+           << " channels=" << static_cast<int>(spec.output.audioChannelCount)
+           << " samplesPerChannel=" << spec.output.samplesPerChannel;
+    return true;
+}
+
+void QtAudioDriver::close()
+{
+    if (m_sink) {
+        m_sink->stop();
+        m_sink.reset();
+    }
+    if (m_device) {
+        m_device->close();
+        m_device.reset();
+    }
+    m_isOpened = false;
+}
+
+bool QtAudioDriver::isOpened() const { return m_isOpened; }
+
+const IAudioDriver::Spec& QtAudioDriver::activeSpec() const { return m_activeSpec; }
+
+muse::async::Channel<IAudioDriver::Spec> QtAudioDriver::activeSpecChanged() const
+{
+    return m_activeSpecChanged;
+}
+
+std::vector<muse::audio::samples_t> QtAudioDriver::availableOutputDeviceBufferSizes() const
+{
+    return { 256, 512, 1024, 2048, 4096 };
+}
+
+std::vector<muse::audio::sample_rate_t> QtAudioDriver::availableOutputDeviceSampleRates() const
+{
+    return { 44100, 48000 };
+}
+
+muse::audio::AudioDeviceList QtAudioDriver::availableOutputDevices() const
+{
+    AudioDevice d;
+    d.id = "default";
+    d.name = "Default";
+    return { d };
+}
+
+muse::async::Notification QtAudioDriver::availableOutputDevicesChanged() const
+{
+    return m_availableOutputDevicesChanged;
+}
+'''
+
+(android_audio_dir / 'qtaudiodriver.h').write_text(qt_driver_h)
+(android_audio_dir / 'qtaudiodriver.cpp').write_text(qt_driver_cpp)
+
+# 3. Patch the audio driver CMakeLists to compile the Android driver and
+# link Qt6::Multimedia.
+driver_cmake = Path('muse/framework/audio/driver/CMakeLists.txt')
+driver_cmake_text = driver_cmake.read_text()
+driver_cmake_anchor = 'target_link_libraries(muse_audio_driver PRIVATE muse_audio_common)'
+driver_cmake_block = (
+    'if (ANDROID)\n'
+    '    target_sources(muse_audio_driver PRIVATE\n'
+    '        platform/android/qtaudiodriver.cpp\n'
+    '        platform/android/qtaudiodriver.h\n'
+    '    )\n'
+    '    target_link_libraries(muse_audio_driver PRIVATE Qt6::Multimedia)\n'
+    'endif()\n'
+    '\n'
+    'target_link_libraries(muse_audio_driver PRIVATE muse_audio_common)'
+)
+if driver_cmake_anchor not in driver_cmake_text:
+    raise SystemExit('audio driver CMakeLists anchor not found')
+driver_cmake_text = driver_cmake_text.replace(driver_cmake_anchor, driver_cmake_block, 1)
+driver_cmake.write_text(driver_cmake_text)
+
+# 4. Wire the new driver into AudioDriverController. Without an Android branch
+# both createDriver() and availableAudioDrivers() fall through to nothing on
+# Android (since ALSA is gated out above), which leaves the engine with no
+# output device.
+controller_path = Path('muse/framework/audio/main/internal/audiodrivercontroller.cpp')
+controller_text = controller_path.read_text()
+
+controller_include_anchor = '#include "audiodrivercontroller.h"\n'
+controller_include_new = (
+    '#include "audiodrivercontroller.h"\n'
+    '\n'
+    '#ifdef Q_OS_ANDROID\n'
+    '#include "audio/driver/platform/android/qtaudiodriver.h"\n'
+    '#endif\n'
+)
+if controller_include_anchor not in controller_text:
+    raise SystemExit('audiodrivercontroller include anchor not found')
+controller_text = controller_text.replace(controller_include_anchor, controller_include_new, 1)
+
+controller_create_anchor = ('IAudioDriverPtr AudioDriverController::createDriver'
+                            '(const std::string& name) const\n{\n')
+controller_create_new = (
+    controller_create_anchor
+    + '#ifdef Q_OS_ANDROID\n'
+    + '    UNUSED(name);\n'
+    + '    return std::shared_ptr<IAudioDriver>(new QtAudioDriver());\n'
+    + '#endif\n'
+)
+if controller_create_anchor not in controller_text:
+    raise SystemExit('audiodrivercontroller createDriver anchor not found')
+controller_text = controller_text.replace(controller_create_anchor, controller_create_new, 1)
+
+controller_avail_anchor = ('std::vector<std::string> AudioDriverController::'
+                           'availableAudioDrivers() const\n{\n'
+                           '    std::vector<std::string> names;\n')
+controller_avail_new = (
+    controller_avail_anchor
+    + '#ifdef Q_OS_ANDROID\n'
+    + '    names.push_back("QtAudio");\n'
+    + '    return names;\n'
+    + '#endif\n'
+)
+if controller_avail_anchor not in controller_text:
+    raise SystemExit('audiodrivercontroller availableAudioDrivers anchor not found')
+controller_text = controller_text.replace(controller_avail_anchor, controller_avail_new, 1)
+
+controller_path.write_text(controller_text)
 PY
 

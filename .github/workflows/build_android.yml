@@ -132,7 +132,7 @@ jobs:
         host: linux
         target: android
         arch: ${{ env.QT_ANDROID_ARCH }}
-        modules: 'qt5compat qtnetworkauth qtshadertools qtwebsockets'
+        modules: 'qt5compat qtnetworkauth qtshadertools qtwebsockets qtmultimedia'
         cache: true
 
     - name: Restore sccache files
