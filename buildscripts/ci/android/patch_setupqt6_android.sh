@@ -176,11 +176,11 @@ for relative_path, replacements in {
     'muse/framework/audio/main/internal/audioconfiguration.cpp': [
         (
             '#include "audioconfiguration.h"\n\n//TODO: remove with global clearing of Q_OS_*** defines\n#include <QtGlobal>\n',
-            '#include "audioconfiguration.h"\n\n//TODO: remove with global clearing of Q_OS_*** defines\n#include <QtGlobal>\n\n#ifdef Q_OS_ANDROID\n#include <QStandardPaths>\n#endif\n',
+            '#include "audioconfiguration.h"\n\n//TODO: remove with global clearing of Q_OS_*** defines\n#include <QtGlobal>\n\n#ifdef Q_OS_ANDROID\n#include <QStandardPaths>\n#include "log.h"\n#endif\n',
         ),
         (
             'io::paths_t AudioConfiguration::soundFontDirectories() const\n{\n    io::paths_t paths = userSoundFontDirectories();\n    paths.push_back(globalConfiguration()->appDataPath());\n\n    return paths;\n}\n',
-            'io::paths_t AudioConfiguration::soundFontDirectories() const\n{\n    io::paths_t paths = userSoundFontDirectories();\n    paths.push_back(globalConfiguration()->appDataPath());\n\n#ifdef Q_OS_ANDROID\n    paths.push_back(io::path_t(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/sound")));\n#endif\n\n    return paths;\n}\n',
+            'io::paths_t AudioConfiguration::soundFontDirectories() const\n{\n    io::paths_t paths = userSoundFontDirectories();\n    paths.push_back(globalConfiguration()->appDataPath());\n\n#ifdef Q_OS_ANDROID\n    const QString androidSoundDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/sound");\n    paths.push_back(io::path_t(androidSoundDir));\n    LOGI() << "Android soundfont dirs: appData=" << globalConfiguration()->appDataPath().toStdString() << " writable=" << androidSoundDir.toStdString();\n#endif\n\n    return paths;\n}\n',
         ),
     ],
     # Route ConsoleLogDest output to Android logcat so muse LOG* macros become
