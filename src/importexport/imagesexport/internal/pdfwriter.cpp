@@ -62,7 +62,8 @@ Ret PdfWriter::write(INotationPtr notation, io::IODevice& destinationDevice, con
 
     Painter painter(&pdfWriter, "pdfwriter");
     if (!painter.isActive()) {
-        return false;
+        LOGE() << "Failed to start PDF painter for " << notation->projectWorkTitleAndPartName();
+        return make_ret(Ret::Code::UnknownError);
     }
 
     const bool TRANSPARENT_BACKGROUND = muse::value(options, OptionKey::TRANSPARENT_BACKGROUND,
@@ -81,10 +82,21 @@ Ret PdfWriter::write(INotationPtr notation, io::IODevice& destinationDevice, con
 
     notation->painting()->paintPdf(&painter, opt);
 
-    painter.endDraw();
+    if (!painter.endDraw()) {
+        LOGE() << "Failed to finalize PDF painter for " << notation->projectWorkTitleAndPartName();
+        return make_ret(Ret::Code::UnknownError);
+    }
 
     ByteArray data = ByteArray::fromQByteArrayNoCopy(qdata);
-    destinationDevice.write(data);
+    if (data.empty()) {
+        LOGE() << "Generated PDF is empty for " << notation->projectWorkTitleAndPartName();
+        return make_ret(Ret::Code::UnknownError);
+    }
+
+    if (destinationDevice.write(data) != data.size()) {
+        LOGE() << "Failed to write " << data.size() << " bytes of PDF data to destination";
+        return make_ret(Ret::Code::UnknownError);
+    }
 
     return true;
 }
@@ -114,7 +126,8 @@ Ret PdfWriter::writeList(const INotationPtrList& notations, io::IODevice& destin
 
     Painter painter(&pdfWriter, "pdfwriter");
     if (!painter.isActive()) {
-        return false;
+        LOGE() << "Failed to start PDF painter for " << firstNotation->projectWorkTitle();
+        return make_ret(Ret::Code::UnknownError);
     }
 
     const bool TRANSPARENT_BACKGROUND = muse::value(options, OptionKey::TRANSPARENT_BACKGROUND,
@@ -139,10 +152,21 @@ Ret PdfWriter::writeList(const INotationPtrList& notations, io::IODevice& destin
         notation->painting()->paintPdf(&painter, opt);
     }
 
-    painter.endDraw();
+    if (!painter.endDraw()) {
+        LOGE() << "Failed to finalize PDF painter for " << firstNotation->projectWorkTitle();
+        return make_ret(Ret::Code::UnknownError);
+    }
 
     ByteArray data = ByteArray::fromQByteArrayNoCopy(qdata);
-    destinationDevice.write(data);
+    if (data.empty()) {
+        LOGE() << "Generated PDF is empty for " << firstNotation->projectWorkTitle();
+        return make_ret(Ret::Code::UnknownError);
+    }
+
+    if (destinationDevice.write(data) != data.size()) {
+        LOGE() << "Failed to write " << data.size() << " bytes of PDF data to destination";
+        return make_ret(Ret::Code::UnknownError);
+    }
 
     return true;
 }

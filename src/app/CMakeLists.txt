@@ -430,6 +430,13 @@ elseif(OS_IS_MAC)
 ###########################################
 elseif(ANDROID)
 
+    # Use a custom Android package source directory so we can ship our own
+    # AndroidManifest.xml (file-type association intent-filters, storage
+    # permissions, package id). Keep it in its own subdirectory so the C++
+    # soundfont sources under android/ are not copied into the package.
+    set_property(TARGET MuseScoreStudio PROPERTY
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/android/package")
+
     # Let Qt generate the Android deployment script so CI/local builds can
     # produce installable artifacts (apk/aab targets).
     qt_generate_deploy_qml_app_script(

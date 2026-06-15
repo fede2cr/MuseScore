@@ -94,7 +94,7 @@ jobs:
         git submodule sync --recursive
         git submodule update --init --recursive
 
-    - name: Disable DBus requirement on Android
+    - name: Apply Android patches to muse_framework
       run: |
         set -euo pipefail
         bash ./buildscripts/ci/android/patch_setupqt6_android.sh
@@ -319,7 +319,7 @@ jobs:
       with:
         tag_name: ${{ github.ref_name }}
         name: MuseScore Android ${{ steps.configure.outputs.release_version }}
-        draft: true
+        draft: false
         prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
         generate_release_notes: true
         fail_on_unmatched_files: true
