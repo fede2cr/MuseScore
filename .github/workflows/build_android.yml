@@ -234,6 +234,56 @@ jobs:
         chmod +x ./buildscripts/ci/android/build.sh
         bash ./buildscripts/ci/android/build.sh -n ${{ steps.configure.outputs.build_number }} --build_mode "${BUILD_MODE}"
 
+    - name: Verify AndroidManifest in built APK
+      if: always()
+      run: |
+        set -uo pipefail
+
+        APK_PATH="$(find ./build.android.release ./build.artifacts/android -type f -name '*.apk' 2>/dev/null | head -n 1 || true)"
+        if [ -z "$APK_PATH" ]; then
+          echo "No APK found to inspect; skipping manifest verification."
+          exit 0
+        fi
+        echo "Inspecting APK: $APK_PATH"
+
+        AAPT2="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt2"
+        AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+
+        MANIFEST_DUMP=""
+        if [ -x "$AAPT2" ]; then
+          MANIFEST_DUMP="$("$AAPT2" dump xmltree --file AndroidManifest.xml "$APK_PATH" 2>/dev/null || true)"
+        fi
+        if [ -z "$MANIFEST_DUMP" ] && [ -x "$AAPT" ]; then
+          MANIFEST_DUMP="$("$AAPT" dump xmltree "$APK_PATH" AndroidManifest.xml 2>/dev/null || true)"
+        fi
+
+        if [ -z "$MANIFEST_DUMP" ]; then
+          echo "::warning::Could not dump AndroidManifest.xml from the APK."
+          exit 0
+        fi
+
+        echo "----- packaged AndroidManifest.xml (decoded) -----"
+        echo "$MANIFEST_DUMP"
+        echo "--------------------------------------------------"
+
+        echo "===== Checks ====="
+        FAIL=0
+        if echo "$MANIFEST_DUMP" | grep -q 'application/x-musescore'; then
+          echo "OK: mscz MIME intent-filter present"
+        else
+          echo "::error::mscz MIME intent-filter (application/x-musescore) NOT found in packaged manifest -> our AndroidManifest.xml was not used"
+          FAIL=1
+        fi
+        if echo "$MANIFEST_DUMP" | grep -q '\.mscz'; then
+          echo "OK: .mscz pathPattern present"
+        else
+          echo "::error::.mscz pathPattern NOT found in packaged manifest"
+          FAIL=1
+        fi
+        if [ "$FAIL" -ne 0 ]; then
+          echo "::error::The custom manifest is missing from the APK. Check QT_ANDROID_PACKAGE_SOURCE_DIR wiring."
+        fi
+
     - name: Show sccache stats
       if: always()
       run: |

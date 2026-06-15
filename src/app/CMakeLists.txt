@@ -251,6 +251,17 @@ qt_add_executable(MuseScoreStudio
     ${APP_SRC}
 )
 
+if (ANDROID)
+    # Ship our own AndroidManifest.xml (file-type association intent-filters,
+    # storage permissions, package id). This MUST be set right after the target
+    # is created so it is captured no matter when Qt finalizes the target and
+    # invokes androiddeployqt. Kept in its own subdirectory so the C++ soundfont
+    # sources under android/ are not swept into the package.
+    set_target_properties(MuseScoreStudio PROPERTIES
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/android/package")
+    message(STATUS "Android: QT_ANDROID_PACKAGE_SOURCE_DIR = ${CMAKE_CURRENT_LIST_DIR}/android/package")
+endif()
+
 ###########################################
 # Setting target properties
 ###########################################
@@ -430,12 +441,9 @@ elseif(OS_IS_MAC)
 ###########################################
 elseif(ANDROID)
 
-    # Use a custom Android package source directory so we can ship our own
-    # AndroidManifest.xml (file-type association intent-filters, storage
-    # permissions, package id). Keep it in its own subdirectory so the C++
-    # soundfont sources under android/ are not copied into the package.
-    set_property(TARGET MuseScoreStudio PROPERTY
-        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/android/package")
+    # The custom Android package source directory (QT_ANDROID_PACKAGE_SOURCE_DIR)
+    # is set right after qt_add_executable above so it is captured regardless of
+    # finalization timing.
 
     # Let Qt generate the Android deployment script so CI/local builds can
     # produce installable artifacts (apk/aab targets).

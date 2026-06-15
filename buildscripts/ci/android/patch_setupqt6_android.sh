@@ -299,19 +299,63 @@ if helper_anchor not in text:
     raise SystemExit(f'helper anchor not found in {interactive_cpp}')
 text = text.replace(helper_anchor, helper_block, 1)
 
-# Route the async selectOpeningFile result through the SAF helper on Android.
-async_anchor = '            QString file = files.first();\n            (void)resolve(file);\n'
-async_new = (
-    '            QString file = files.first();\n'
-    '#ifdef Q_OS_ANDROID\n'
-    '            (void)resolve(copyAndroidContentUriToCache(file));\n'
-    '#else\n'
-    '            (void)resolve(file);\n'
-    '#endif\n'
+# On Android the widget QFileDialog (created with `new QFileDialog` + open())
+# shows Qt's non-native file browser, which cannot reach shared storage and
+# resolves to an empty path -- so File > Open silently does nothing (logged as
+# "Try open project: url = ''"). Route the async selectOpeningFile through the
+# native static QFileDialog::getOpenFileName (which Qt maps to the Android
+# Storage Access Framework picker, ACTION_OPEN_DOCUMENT) by delegating to
+# selectOpeningFileSync, which also copies the picked content:// URI into the
+# app cache so the rest of the app can open it as a real file.
+async_open_anchor = (
+    '    return async::make_promise<io::path_t>([title, dir, filter](auto resolve, auto reject) {\n'
+    '        QFileDialog* dlg = new QFileDialog(nullptr, QString::fromStdString(title), dir.toQString(), filterToString(filter));\n'
+    '\n'
+    '        dlg->setFileMode(QFileDialog::ExistingFile);\n'
 )
-if async_anchor not in text:
-    raise SystemExit(f'async open anchor not found in {interactive_cpp}')
-text = text.replace(async_anchor, async_new, 1)
+async_open_new = (
+    '#ifdef Q_OS_ANDROID\n'
+    '    return async::make_promise<io::path_t>([this, title, dir, filter](auto resolve, auto reject) {\n'
+    '        const io::path_t selected = selectOpeningFileSync(title, dir, filter, 0);\n'
+    '        if (selected.empty()) {\n'
+    '            Ret ret = muse::make_ret(Ret::Code::Cancel);\n'
+    '            (void)reject(ret.code(), ret.text());\n'
+    '        } else {\n'
+    '            (void)resolve(selected);\n'
+    '        }\n'
+    '        return async::Promise<io::path_t>::Result::unchecked();\n'
+    '    }, async::PromiseType::AsyncByBody);\n'
+    '#else\n'
+    '    return async::make_promise<io::path_t>([title, dir, filter](auto resolve, auto reject) {\n'
+    '        QFileDialog* dlg = new QFileDialog(nullptr, QString::fromStdString(title), dir.toQString(), filterToString(filter));\n'
+    '\n'
+    '        dlg->setFileMode(QFileDialog::ExistingFile);\n'
+)
+if async_open_anchor not in text:
+    raise SystemExit(f'async open dialog anchor not found in {interactive_cpp}')
+text = text.replace(async_open_anchor, async_open_new, 1)
+
+# Close the Android #ifdef/#else opened above, right before the QML #else.
+async_close_anchor = (
+    '        dlg->open();\n'
+    '\n'
+    '        return async::Promise<io::path_t>::Result::unchecked();\n'
+    '    }, async::PromiseType::AsyncByBody);\n'
+    '\n'
+    '#else\n'
+)
+async_close_new = (
+    '        dlg->open();\n'
+    '\n'
+    '        return async::Promise<io::path_t>::Result::unchecked();\n'
+    '    }, async::PromiseType::AsyncByBody);\n'
+    '#endif // Q_OS_ANDROID\n'
+    '\n'
+    '#else\n'
+)
+if async_close_anchor not in text:
+    raise SystemExit(f'async open close anchor not found in {interactive_cpp}')
+text = text.replace(async_close_anchor, async_close_new, 1)
 
 # Route selectOpeningFileSync result through the SAF helper. Use the
 # QFileDialog::getOpenFileName line plus its trailing return as a unique
