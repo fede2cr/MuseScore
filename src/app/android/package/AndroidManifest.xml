@@ -12,6 +12,21 @@
     <!-- %%INSERT_PERMISSIONS -->
     <!-- %%INSERT_FEATURES -->
 
+    <!-- Android 11+ (API 30) package visibility: allow resolving the document
+         providers behind the content:// URIs returned by the file picker, so the
+         app can query metadata and open input streams for picked documents. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <provider android:authorities="com.microsoft.skydrive.content.storageaccessprovider" />
+    </queries>
+
     <supports-screens
         android:anyDensity="true"
         android:largeScreens="true"

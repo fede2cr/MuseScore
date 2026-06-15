@@ -458,6 +458,12 @@ async_open_anchor = (
 )
 async_open_new = (
     '#ifdef Q_OS_ANDROID\n'
+    '    // Use AsyncByPromise (not AsyncByBody): the body below calls the blocking\n'
+    '    // native SAF picker and then resolves. AsyncByBody would run the body\n'
+    '    // synchronously inside the Promise constructor, i.e. before the caller has\n'
+    '    // attached onResolve(), so the resolved path would be dropped and the file\n'
+    '    // never opened. AsyncByPromise defers the body to the event loop so the\n'
+    '    // continuation is connected before resolve() fires.\n'
     '    return async::make_promise<io::path_t>([this, title, dir, filter](auto resolve, auto reject) {\n'
     '        const io::path_t selected = selectOpeningFileSync(title, dir, filter, 0);\n'
     '        LOGI() << "Android async open resolved to: " << selected.toStdString();\n'
@@ -468,7 +474,7 @@ async_open_new = (
     '            (void)resolve(selected);\n'
     '        }\n'
     '        return async::Promise<io::path_t>::Result::unchecked();\n'
-    '    }, async::PromiseType::AsyncByBody);\n'
+    '    }, async::PromiseType::AsyncByPromise);\n'
     '#else\n'
     '    return async::make_promise<io::path_t>([title, dir, filter](auto resolve, auto reject) {\n'
     '        QFileDialog* dlg = new QFileDialog(nullptr, QString::fromStdString(title), dir.toQString(), filterToString(filter));\n'
