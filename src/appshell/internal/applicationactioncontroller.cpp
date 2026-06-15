@@ -34,6 +34,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QJniEnvironment>
 #include <QStandardPaths>
 #include <QUrl>
 #include <QJniObject>
@@ -235,6 +236,21 @@ QString ApplicationActionController::consumeAndroidLaunchFile()
     }
 
     if (displayName.isEmpty()) {
+        // Fall back to the last path segment of the URI, which for some providers
+        // (e.g. the OneDrive .external provider) carries the real file name.
+        const QString decodedPath = QUrl::fromPercentEncoding(uriStr.toUtf8());
+        const int slash = decodedPath.lastIndexOf(QLatin1Char('/'));
+        QString candidate = slash >= 0 ? decodedPath.mid(slash + 1) : QString();
+        const int query = candidate.indexOf(QLatin1Char('?'));
+        if (query >= 0) {
+            candidate = candidate.left(query);
+        }
+        if (candidate.contains(QLatin1Char('.'))) {
+            displayName = candidate;
+        }
+    }
+
+    if (displayName.isEmpty()) {
         displayName = QStringLiteral("opened_score.mscz");
     }
 
@@ -247,8 +263,17 @@ QString ApplicationActionController::consumeAndroidLaunchFile()
 
     const QString destPath = destDir + QLatin1Char('/') + displayName;
 
-    QFile src(uriStr);
-    if (!src.open(QIODevice::ReadOnly)) {
+    // QFile cannot open SAF content:// URIs (e.g. OneDrive providers); read the
+    // document through ContentResolver.openInputStream via JNI instead.
+    if (!resolver.isValid()) {
+        LOGE() << "No content resolver available for launch uri: " << uriStr;
+        return QString();
+    }
+
+    QJniEnvironment env;
+    QJniObject stream = resolver.callObjectMethod(
+        "openInputStream", "(Landroid/net/Uri;)Ljava/io/InputStream;", uri.object());
+    if (env.checkAndClearExceptions() || !stream.isValid()) {
         LOGE() << "Failed to open launch content uri: " << uriStr;
         return QString();
     }
@@ -256,16 +281,45 @@ QString ApplicationActionController::consumeAndroidLaunchFile()
     QFile dst(destPath);
     if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         LOGE() << "Failed to create cache copy of launch file: " << destPath;
+        stream.callMethod<void>("close");
+        env.checkAndClearExceptions();
         return QString();
     }
 
-    const QByteArray data = src.readAll();
-    if (dst.write(data) != data.size()) {
-        LOGE() << "Failed to write cache copy of launch file: " << destPath;
+    const jint bufSize = 65536;
+    jbyteArray jbuf = env->NewByteArray(bufSize);
+    bool ok = true;
+    qint64 total = 0;
+    for (;;) {
+        const jint n = stream.callMethod<jint>("read", "([B)I", jbuf);
+        if (env.checkAndClearExceptions()) {
+            ok = false;
+            break;
+        }
+        if (n < 0) {
+            break;
+        }
+        if (n > 0) {
+            QByteArray chunk(n, Qt::Uninitialized);
+            env->GetByteArrayRegion(jbuf, 0, n, reinterpret_cast<jbyte*>(chunk.data()));
+            if (dst.write(chunk) != n) {
+                ok = false;
+                break;
+            }
+            total += n;
+        }
+    }
+    env->DeleteLocalRef(jbuf);
+    stream.callMethod<void>("close");
+    env.checkAndClearExceptions();
+    dst.close();
+
+    if (!ok || total <= 0) {
+        LOGE() << "Failed to read launch content uri into cache: " << uriStr;
         return QString();
     }
 
-    LOGI() << "Copied Android launch file to cache: " << destPath;
+    LOGI() << "Copied Android launch file to cache (" << total << " bytes): " << destPath;
     return destPath;
 }
 #endif // Q_OS_ANDROID
