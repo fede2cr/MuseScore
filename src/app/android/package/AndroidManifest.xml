@@ -16,6 +16,14 @@
          providers behind the content:// URIs returned by the file picker, so the
          app can query metadata and open input streams for picked documents. -->
     <queries>
+        <!-- Make every Storage Access Framework DocumentsProvider (OneDrive,
+             Drive, Downloads, etc.) visible to this app. This is required so
+             ContentResolver can acquire the provider when opening the
+             content:// URIs the picker returns; without it, openInputStream
+             fails with "No content provider" on Android 11+. -->
+        <intent>
+            <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.GET_CONTENT" />
             <data android:mimeType="*/*" />
@@ -25,6 +33,7 @@
             <data android:mimeType="*/*" />
         </intent>
         <provider android:authorities="com.microsoft.skydrive.content.storageaccessprovider" />
+        <provider android:authorities="com.microsoft.skydrive.content.external" />
     </queries>
 
     <supports-screens
