@@ -591,7 +591,7 @@ sync_new = (
     '                          "or mark it \\"Available offline\\", then try again. "\n'
     '                          "Otherwise, try copying it to local storage and opening it from there.")\n'
     '            : std::string("MuseScore could not read the selected file. It may be unavailable or in an unsupported location.");\n'
-    '        errorSync(muse::trc("project", "Could not open file"), msg);\n'
+    '        errorSync(muse::trc("project", "Could not open file"), Text(msg));\n'
     '    }\n'
     '    return cached;\n'
     '#else\n'
