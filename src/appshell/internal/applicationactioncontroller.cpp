@@ -30,6 +30,15 @@
 #include <QWindow>
 #include <QMimeData>
 
+#ifdef Q_OS_ANDROID
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QStandardPaths>
+#include <QUrl>
+#include <QJniObject>
+#endif
+
 #include "async/async.h"
 #include "audio/common/soundfonttypes.h"
 
@@ -82,6 +91,10 @@ void ApplicationActionController::init()
     dispatcher()->reg(this, "action://redo", this, &ApplicationActionController::doGlobalRedo);
     dispatcher()->reg(this, "action://delete", this, &ApplicationActionController::doGlobalDelete);
     dispatcher()->reg(this, "action://cancel", this, &ApplicationActionController::doGlobalCancel);
+
+#ifdef Q_OS_ANDROID
+    openAndroidLaunchFileIfAny();
+#endif
 }
 
 bool ApplicationActionController::eventFilter(QObject* watched, QEvent* event)
@@ -129,6 +142,133 @@ bool ApplicationActionController::eventFilter(QObject* watched, QEvent* event)
 
     return QObject::eventFilter(watched, event);
 }
+
+#ifdef Q_OS_ANDROID
+void ApplicationActionController::openAndroidLaunchFileIfAny()
+{
+    const QString path = consumeAndroidLaunchFile();
+    if (path.isEmpty()) {
+        return;
+    }
+
+    const QUrl url = QUrl::fromLocalFile(path);
+    if (!projectFilesController()->isUrlSupported(url)) {
+        LOGW() << "Android launch file is not a supported score: " << url.toString();
+        return;
+    }
+
+    if (startupScenario()->startupCompleted()) {
+        dispatcher()->dispatch("file-open", ActionData::make_arg1<QUrl>(url));
+    } else {
+        startupScenario()->setStartupScoreFile(project::ProjectFile { url });
+    }
+
+    LOGI() << "Android launch file scheduled to open: " << url.toString();
+}
+
+QString ApplicationActionController::consumeAndroidLaunchFile()
+{
+    // On Android, files opened from another app (file manager, OneDrive, etc.)
+    // arrive as an ACTION_VIEW/ACTION_EDIT Intent on the Activity rather than as
+    // a QFileOpenEvent. Read that Intent here and copy the referenced content://
+    // document into our cache so the rest of the app can open it as a local file.
+    QJniObject activity(QNativeInterface::QAndroidApplication::context());
+    if (!activity.isValid()) {
+        return QString();
+    }
+
+    QJniObject intent = activity.callObjectMethod("getIntent", "()Landroid/content/Intent;");
+    if (!intent.isValid()) {
+        return QString();
+    }
+
+    QJniObject actionObj = intent.callObjectMethod("getAction", "()Ljava/lang/String;");
+    const QString action = actionObj.isValid() ? actionObj.toString() : QString();
+    if (action != QLatin1String("android.intent.action.VIEW")
+        && action != QLatin1String("android.intent.action.EDIT")) {
+        return QString();
+    }
+
+    QJniObject uri = intent.callObjectMethod("getData", "()Landroid/net/Uri;");
+    if (!uri.isValid()) {
+        return QString();
+    }
+
+    QJniObject schemeObj = uri.callObjectMethod("getScheme", "()Ljava/lang/String;");
+    const QString scheme = schemeObj.isValid() ? schemeObj.toString() : QString();
+    const QString uriStr = uri.callObjectMethod("toString", "()Ljava/lang/String;").toString();
+
+    // Avoid re-opening the same file when the Activity is later resumed.
+    intent.callObjectMethod("setData", "(Landroid/net/Uri;)Landroid/content/Intent;",
+                            static_cast<jobject>(nullptr));
+
+    if (scheme == QLatin1String("file")) {
+        return QUrl(uriStr).toLocalFile();
+    }
+
+    if (scheme != QLatin1String("content")) {
+        return QString();
+    }
+
+    // Resolve the human-readable display name (including extension) via the
+    // ContentResolver, so type detection by extension keeps working.
+    QString displayName;
+    QJniObject resolver = activity.callObjectMethod("getContentResolver", "()Landroid/content/ContentResolver;");
+    if (resolver.isValid()) {
+        QJniObject cursor = resolver.callObjectMethod(
+            "query",
+            "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
+            uri.object(), nullptr, nullptr, nullptr, nullptr);
+        if (cursor.isValid()) {
+            if (cursor.callMethod<jboolean>("moveToFirst")) {
+                QJniObject column = QJniObject::fromString(QStringLiteral("_display_name"));
+                const jint index = cursor.callMethod<jint>("getColumnIndex", "(Ljava/lang/String;)I", column.object());
+                if (index >= 0) {
+                    QJniObject nameObj = cursor.callObjectMethod("getString", "(I)Ljava/lang/String;", index);
+                    if (nameObj.isValid()) {
+                        displayName = nameObj.toString();
+                    }
+                }
+            }
+            cursor.callMethod<void>("close");
+        }
+    }
+
+    if (displayName.isEmpty()) {
+        displayName = QStringLiteral("opened_score.mscz");
+    }
+
+    const QString destDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+                            + QStringLiteral("/opened");
+    if (!QDir().mkpath(destDir)) {
+        LOGE() << "Failed to create cache directory for opened file: " << destDir;
+        return QString();
+    }
+
+    const QString destPath = destDir + QLatin1Char('/') + displayName;
+
+    QFile src(uriStr);
+    if (!src.open(QIODevice::ReadOnly)) {
+        LOGE() << "Failed to open launch content uri: " << uriStr;
+        return QString();
+    }
+
+    QFile dst(destPath);
+    if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        LOGE() << "Failed to create cache copy of launch file: " << destPath;
+        return QString();
+    }
+
+    const QByteArray data = src.readAll();
+    if (dst.write(data) != data.size()) {
+        LOGE() << "Failed to write cache copy of launch file: " << destPath;
+        return QString();
+    }
+
+    LOGI() << "Copied Android launch file to cache: " << destPath;
+    return destPath;
+}
+#endif // Q_OS_ANDROID
 
 QWindow* ApplicationActionController::qWindow() const
 {

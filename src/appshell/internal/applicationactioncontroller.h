@@ -87,6 +87,11 @@ private:
 
     bool eventFilter(QObject* watched, QEvent* event) override;
 
+#ifdef Q_OS_ANDROID
+    void openAndroidLaunchFileIfAny();
+    QString consumeAndroidLaunchFile();
+#endif
+
     QWindow* qWindow() const;
 
     DragTarget dragTarget(const QUrl& url) const;
