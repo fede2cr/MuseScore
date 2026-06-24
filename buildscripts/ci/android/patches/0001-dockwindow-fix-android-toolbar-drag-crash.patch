@@ -1,0 +1,34 @@
+diff --git a/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController.cpp b/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController.cpp
+index 29cc54538..deda9f5c4 100644
+--- a/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController.cpp
++++ b/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController.cpp
+@@ -758,6 +758,17 @@ WindowBeingDragged *DragController::windowBeingDragged() const
+ 
+ bool DragController::eventFilter(QObject *o, QEvent *e)
+ {
++    if (m_inEventFilter) {
++        // Re-entrancy guard. On some platforms (notably Android) starting a drag creates and
++        // shows the floating window (Draggable::makeWindow -> DockWidget::setFloating), which
++        // synchronously flushes the window-system event queue. That re-delivers touch/mouse
++        // events into this filter while the drag state machine is still mid-transition.
++        // Dispatching them to the state machine here corrupts its state and crashes, so let
++        // such nested events propagate normally instead of feeding them back into the drag.
++        return false;
++    }
++    QScopedValueRollback<bool> eventFilterGuard(m_inEventFilter, true);
++
+     if (m_nonClientDrag && e->type() == QEvent::Move) {
+         // On Windows, non-client mouse moves are only sent at the end, so we must fake it:
+         qCDebug(mouseevents) << "DragController::eventFilter e=" << e->type() << "; o=" << o;
+diff --git a/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController_p.h b/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController_p.h
+index a06e4943f..51c287554 100644
+--- a/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController_p.h
++++ b/framework/dockwindow/thirdparty/KDDockWidgets/src/private/DragController_p.h
+@@ -151,6 +151,7 @@ private:
+     std::unique_ptr<WindowBeingDragged> m_windowBeingDragged;
+     DropArea *m_currentDropArea = nullptr;
+     bool m_nonClientDrag = false;
++    bool m_inEventFilter = false; // Re-entrancy guard for eventFilter(), see DragController.cpp
+     FallbackMouseGrabber *m_fallbackMouseGrabber = nullptr;
+     StateInternalMDIDragging *m_stateDraggingMDI = nullptr;
+     ResolveDropAreaFunc m_resolveDropAreaFunc = nullptr;

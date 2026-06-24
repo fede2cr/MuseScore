@@ -1,0 +1,23 @@
+diff --git a/framework/dockwindow/qml/Muse/Dock/docktoolbarview.cpp b/framework/dockwindow/qml/Muse/Dock/docktoolbarview.cpp
+index c80ad34d6..83cdb394c 100644
+--- a/framework/dockwindow/qml/Muse/Dock/docktoolbarview.cpp
++++ b/framework/dockwindow/qml/Muse/Dock/docktoolbarview.cpp
+@@ -166,11 +166,18 @@ void DockToolBarView::componentComplete()
+ void DockToolBarView::init()
+ {
+     if (canChangeOrientation()) {
++#ifdef Q_OS_ANDROID
++        // On Android/tablet, toolbars should always start horizontal (docked at the top)
++        // instead of auto-switching to vertical based on the restored geometry. The user can
++        // still drag a toolbar to a side edge to make it vertical afterwards.
++        setOrientation(Qt::Horizontal);
++#else
+         if (height() > width()) {
+             setOrientation(Qt::Vertical);
+         } else {
+             setOrientation(Qt::Horizontal);
+         }
++#endif
+     }
+ 
+     DockBase::init();
