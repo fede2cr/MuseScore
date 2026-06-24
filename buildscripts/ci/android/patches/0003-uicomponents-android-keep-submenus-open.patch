@@ -1,0 +1,20 @@
+diff --git a/framework/uicomponents/qml/Muse/UiComponents/internal/popupviewclosecontroller.cpp b/framework/uicomponents/qml/Muse/UiComponents/internal/popupviewclosecontroller.cpp
+index 5068c861e..4ce6f81d5 100644
+--- a/framework/uicomponents/qml/Muse/UiComponents/internal/popupviewclosecontroller.cpp
++++ b/framework/uicomponents/qml/Muse/UiComponents/internal/popupviewclosecontroller.cpp
+@@ -109,7 +109,15 @@ bool PopupViewCloseController::eventFilter(QObject* watched, QEvent* event)
+     } else if (QEvent::MouseButtonPress == event->type()) {
+         doFocusOut(static_cast<QMouseEvent*>(event)->globalPosition());
+     } else if (QEvent::FocusOut == event->type() && watched == popupWindow()) {
++#ifndef Q_OS_ANDROID
++        // On Android, popups (including cascading submenus) are separate native windows.
++        // Opening a submenu moves window focus away from its parent popup, which delivers a
++        // FocusOut to the parent popup window. Touch devices have no reliable QCursor::pos(),
++        // so the focus-out boundary check misfires and closes the whole menu chain. Tapping
++        // outside is still handled by the MouseButtonPress branch above, so skip the
++        // focus-out close entirely on Android.
+         doFocusOut(QCursor::pos());
++#endif
+     } else if (QEvent::Close == event->type() && watched == popupWindow()) {
+         if (!m_canClose) {
+             event->ignore();
