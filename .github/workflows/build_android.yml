@@ -98,6 +98,7 @@ jobs:
       run: |
         set -euo pipefail
         bash ./buildscripts/ci/android/patch_setupqt6_android.sh
+        bash ./buildscripts/ci/android/apply_muse_patches.sh
 
     - name: Configure workflow
       id: configure
