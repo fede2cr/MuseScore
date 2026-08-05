@@ -74,6 +74,9 @@ if [[ -n "${CMAKE_CXX_COMPILER_LAUNCHER:-}" ]]; then
     CMAKE_LAUNCHER_ARGS+=("-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}")
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/seed_muse_deps.sh" "$BUILD_DIR"
+
 cmake -S . -B "$BUILD_DIR" -GNinja \
     -Wno-deprecated \
     -DCMAKE_BUILD_TYPE=Release \
