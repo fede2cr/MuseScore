@@ -1837,10 +1837,20 @@ static void setActionIconTypeFromAction(ActionIcon* i, const std::string& action
 
         { "add-noteline", ActionIconType::NOTE_ANCHORED_LINE },
 
-        { "toggle-system-lock", ActionIconType::SYSTEM_LOCK }
+        { "toggle-system-lock", ActionIconType::SYSTEM_LOCK },
+
+        { "bassline-salsa-1", ActionIconType::BASSLINE_SALSA_1 },
+        { "bassline-salsa-2", ActionIconType::BASSLINE_SALSA_2 },
+        { "bassline-salsa-3", ActionIconType::BASSLINE_SALSA_3 },
+        { "bassline-salsa-4", ActionIconType::BASSLINE_SALSA_4 },
+        { "bassline-bolero-1", ActionIconType::BASSLINE_BOLERO_1 },
+        { "bassline-bolero-2", ActionIconType::BASSLINE_BOLERO_2 },
+        { "bassline-bolero-3", ActionIconType::BASSLINE_BOLERO_3 },
+        { "bassline-bolero-4", ActionIconType::BASSLINE_BOLERO_4 }
     };
 
-    auto it = map.find(actionCode);
+    const std::string baseCode = actionCode.substr(0, actionCode.find('?'));
+    auto it = map.find(baseCode);
     if (it != map.end()) {
         i->setActionType(it->second);
     }

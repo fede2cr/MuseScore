@@ -22,13 +22,20 @@
 
 #include <gtest/gtest.h>
 
+#include "engraving/dom/actionicon.h"
+#include "engraving/dom/chord.h"
 #include "engraving/dom/engravingitem.h"
 #include "engraving/dom/excerpt.h"
+#include "engraving/dom/factory.h"
+#include "engraving/dom/harmony.h"
 #include "engraving/dom/masterscore.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/measurenumber.h"
+#include "engraving/dom/mscore.h"
+#include "engraving/dom/note.h"
 #include "engraving/dom/rest.h"
 #include "engraving/dom/segment.h"
+#include "engraving/editing/editdata.h"
 #include "engraving/editing/splitjoinmeasure.h"
 #include "engraving/editing/undo.h"
 
@@ -82,6 +89,194 @@ TEST_F(Engraving_MeasureTests, insertMeasureEnd)
     score->endCmd();
 
     EXPECT_TRUE(ScoreComp::saveCompareScore(score, u"measure-3.mscx", MEASURE_DATA_DIR + u"measure-3-ref.mscx"));
+    delete score;
+}
+
+TEST_F(Engraving_MeasureTests, createAndRewriteBassline)
+{
+    MasterScore* score = ScoreRW::readScore(MEASURE_DATA_DIR + u"measure-1.mscx");
+    ASSERT_TRUE(score);
+    Measure* measure = score->firstMeasure();
+    Segment* firstSegment = measure->first(SegmentType::ChordRest);
+    ASSERT_TRUE(firstSegment);
+
+    Harmony* harmony = Factory::createHarmony(firstSegment);
+    harmony->setTrack(0);
+    harmony->setHarmony(u"C7");
+    score->undoAddElement(harmony);
+
+    const auto dropPattern = [score, measure](ActionIconType type) {
+        ActionIcon* icon = new ActionIcon(score->dummy());
+        icon->setActionType(type);
+        EditData editData;
+        editData.dropElement = icon;
+        editData.track = 0;
+        return measure->drop(editData);
+    };
+
+    score->startCmd(TranslatableString::untranslatable("Create salsa bassline"));
+    EXPECT_TRUE(dropPattern(ActionIconType::BASSLINE_SALSA_1));
+    score->endCmd();
+
+    int salsaEvents = 0;
+    for (Segment* segment = measure->first(SegmentType::ChordRest); segment; segment = segment->next(SegmentType::ChordRest)) {
+        if (segment->measure() == measure && segment->element(0)) {
+            ++salsaEvents;
+        }
+    }
+    EXPECT_EQ(salsaEvents, 6);
+
+    score->startCmd(TranslatableString::untranslatable("Rewrite bolero bassline"));
+    EXPECT_TRUE(dropPattern(ActionIconType::BASSLINE_BOLERO_1));
+    score->endCmd();
+
+    int boleroEvents = 0;
+    for (Segment* segment = measure->first(SegmentType::ChordRest); segment; segment = segment->next(SegmentType::ChordRest)) {
+        if (segment->measure() == measure && segment->element(0)) {
+            ++boleroEvents;
+            ASSERT_TRUE(segment->element(0)->isChord());
+        }
+    }
+    EXPECT_EQ(boleroEvents, 4);
+    delete score;
+}
+
+TEST_F(Engraving_MeasureTests, basslineRequiresChordSymbol)
+{
+    MasterScore* score = ScoreRW::readScore(MEASURE_DATA_DIR + u"measure-1.mscx");
+    ASSERT_TRUE(score);
+    Measure* measure = score->firstMeasure();
+    const Fraction originalTimeSignature = measure->timesig();
+
+    ActionIcon* icon = new ActionIcon(score->dummy());
+    icon->setActionType(ActionIconType::BASSLINE_SALSA_1);
+    EditData editData;
+    editData.dropElement = icon;
+    editData.track = 0;
+
+    MScore::setError(MsError::MS_NO_ERROR);
+    EXPECT_FALSE(measure->drop(editData));
+    EXPECT_EQ(MScore::_error, MsError::BASSLINE_REQUIRES_CHORD_SYMBOL);
+    EXPECT_EQ(measure->timesig(), originalTimeSignature);
+    MScore::setError(MsError::MS_NO_ERROR);
+    delete score;
+}
+
+TEST_F(Engraving_MeasureTests, basslineTransitionsToNextChord)
+{
+    MasterScore* score = ScoreRW::readScore(MEASURE_DATA_DIR + u"measure-1.mscx");
+    ASSERT_TRUE(score);
+    Measure* measure = score->firstMeasure();
+    Measure* nextMeasure = measure->nextMeasure();
+    ASSERT_TRUE(nextMeasure);
+
+    Harmony* currentHarmony = Factory::createHarmony(measure->first(SegmentType::ChordRest));
+    currentHarmony->setTrack(0);
+    currentHarmony->setHarmony(u"C7");
+    score->undoAddElement(currentHarmony);
+
+    Harmony* nextHarmony = Factory::createHarmony(nextMeasure->first(SegmentType::ChordRest));
+    nextHarmony->setTrack(0);
+    nextHarmony->setHarmony(u"D7");
+    score->undoAddElement(nextHarmony);
+
+    ActionIcon* icon = new ActionIcon(score->dummy());
+    icon->setActionType(ActionIconType::BASSLINE_SALSA_1);
+    icon->setAction("bassline-salsa-1", u'\u266b');
+    BasslineSettings settings;
+    settings.transition = 1;
+    icon->setBasslineSettings(settings);
+    EXPECT_EQ(icon->basslineSettings().transition, 1);
+
+    EditData editData;
+    editData.dropElement = icon;
+    editData.track = 0;
+    score->startCmd(TranslatableString::untranslatable("Create transition bassline"));
+    EXPECT_TRUE(measure->drop(editData));
+    score->endCmd();
+
+    Chord* finalChord = toChord(measure->last(SegmentType::ChordRest)->element(0));
+    ASSERT_TRUE(finalChord);
+    ASSERT_FALSE(finalChord->notes().empty());
+    EXPECT_EQ(finalChord->notes().front()->pitch(), 38);
+    delete score;
+}
+
+TEST_F(Engraving_MeasureTests, customBasslineAndTransition)
+{
+    MasterScore* score = ScoreRW::readScore(MEASURE_DATA_DIR + u"measure-1.mscx");
+    ASSERT_TRUE(score);
+    Measure* measure = score->firstMeasure();
+    Measure* nextMeasure = measure->nextMeasure();
+    ASSERT_TRUE(nextMeasure);
+
+    Harmony* currentHarmony = Factory::createHarmony(measure->first(SegmentType::ChordRest));
+    currentHarmony->setTrack(0);
+    currentHarmony->setHarmony(u"C7");
+    score->undoAddElement(currentHarmony);
+    Harmony* nextHarmony = Factory::createHarmony(nextMeasure->first(SegmentType::ChordRest));
+    nextHarmony->setTrack(0);
+    nextHarmony->setHarmony(u"D7");
+    score->undoAddElement(nextHarmony);
+
+    ActionIcon* icon = new ActionIcon(score->dummy());
+    icon->setActionType(ActionIconType::BASSLINE_BOLERO_1);
+    icon->setAction("bassline-bolero-1", u'\u266b');
+    BasslineSettings settings;
+    settings.pattern = 5;
+    settings.transition = 5;
+    settings.customPattern = "1:C0,1:C7,1:C0,1:C7,1:C0,1:C7,1:C0,1:C7";
+    settings.customTransition = "1:C0,1:C7,1:N7,1:N0";
+    icon->setBasslineSettings(settings);
+
+    EditData editData;
+    editData.dropElement = icon;
+    editData.track = 0;
+    score->startCmd(TranslatableString::untranslatable("Create custom transition bassline"));
+    EXPECT_TRUE(measure->drop(editData));
+    score->endCmd();
+
+    int eventCount = 0;
+    for (Segment* segment = measure->first(SegmentType::ChordRest); segment; segment = segment->next(SegmentType::ChordRest)) {
+        if (segment->measure() == measure && segment->element(0)) {
+            ++eventCount;
+        }
+    }
+    EXPECT_EQ(eventCount, 8);
+    Chord* finalChord = toChord(measure->last(SegmentType::ChordRest)->element(0));
+    ASSERT_TRUE(finalChord);
+    EXPECT_EQ(finalChord->notes().front()->pitch(), 38);
+    delete score;
+}
+
+TEST_F(Engraving_MeasureTests, invalidCustomBasslineIsRejected)
+{
+    MasterScore* score = ScoreRW::readScore(MEASURE_DATA_DIR + u"measure-1.mscx");
+    ASSERT_TRUE(score);
+    Measure* measure = score->firstMeasure();
+    const Fraction originalTimeSignature = measure->timesig();
+
+    Harmony* harmony = Factory::createHarmony(measure->first(SegmentType::ChordRest));
+    harmony->setTrack(0);
+    harmony->setHarmony(u"C7");
+    score->undoAddElement(harmony);
+
+    ActionIcon* icon = new ActionIcon(score->dummy());
+    icon->setActionType(ActionIconType::BASSLINE_SALSA_1);
+    icon->setAction("bassline-salsa-1", u'\u266b');
+    BasslineSettings settings;
+    settings.pattern = 5;
+    settings.customPattern = "8:C100";
+    icon->setBasslineSettings(settings);
+
+    EditData editData;
+    editData.dropElement = icon;
+    editData.track = 0;
+    MScore::setError(MsError::MS_NO_ERROR);
+    EXPECT_FALSE(measure->drop(editData));
+    EXPECT_EQ(MScore::_error, MsError::BASSLINE_INVALID_PATTERN);
+    EXPECT_EQ(measure->timesig(), originalTimeSignature);
+    MScore::setError(MsError::MS_NO_ERROR);
     delete score;
 }
 

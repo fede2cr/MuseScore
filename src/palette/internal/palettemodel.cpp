@@ -975,6 +975,7 @@ QModelIndexList PaletteTreeModel::match(const QModelIndex& start, int role, cons
 void PaletteTreeModel::itemDataChanged(const QModelIndex& idx)
 {
     emit dataChanged(idx, idx);
+    setTreeChanged();
     if (findPalette(idx)) {
         // palette cells appearance depends on palette settings
         const QModelIndex childFirstIndex = index(0, 0, idx);

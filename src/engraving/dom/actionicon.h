@@ -27,6 +27,13 @@
 #include "draw/types/font.h"
 
 namespace mu::engraving {
+struct BasslineSettings {
+    int pattern = 1;
+    int transition = 0;
+    std::string customPattern;
+    std::string customTransition;
+};
+
 enum class ActionIconType : signed char {
     UNDEFINED = -1,
 
@@ -72,6 +79,15 @@ enum class ActionIconType : signed char {
     NOTE_ANCHORED_LINE,
 
     SYSTEM_LOCK,
+
+    BASSLINE_SALSA_1,
+    BASSLINE_SALSA_2,
+    BASSLINE_SALSA_3,
+    BASSLINE_SALSA_4,
+    BASSLINE_BOLERO_1,
+    BASSLINE_BOLERO_2,
+    BASSLINE_BOLERO_3,
+    BASSLINE_BOLERO_4,
 };
 
 //! Dummy element, used for drag&drop
@@ -88,9 +104,12 @@ public:
 
     ActionIconType actionType() const;
     const std::string& actionCode() const;
+    bool isBassline() const;
+    BasslineSettings basslineSettings() const;
 
     void setActionType(ActionIconType val);
     void setAction(const std::string& actionCode, char16_t icon);
+    void setBasslineSettings(const BasslineSettings& settings);
 
     char16_t icon() const { return m_icon; }
 

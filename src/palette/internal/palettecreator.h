@@ -71,6 +71,7 @@ public:
     PalettePtr newPitchPalette(bool defaultPalette = false);
     PalettePtr newHarpPalette();
     PalettePtr newHandbellsPalette(bool defaultPalette = false);
+    PalettePtr newBasslinePalette();
 
     PaletteTreePtr newMasterPaletteTree();
     PaletteTreePtr newDefaultPaletteTree();

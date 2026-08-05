@@ -37,6 +37,11 @@ void PaletteCellPropertiesModel::load(const QVariant& properties)
     m_originConfig.yOffset = map["yOffset"].toDouble();
     m_originConfig.scale = map["scale"].toDouble();
     m_originConfig.drawStaff = map["drawStaff"].toBool();
+    m_originConfig.isBassline = map["isBassline"].toBool();
+    m_originConfig.basslinePattern = map["basslinePattern"].toInt();
+    m_originConfig.transitionPattern = map["transitionPattern"].toInt();
+    m_originConfig.customBassline = map["customBassline"].toString();
+    m_originConfig.customTransition = map["customTransition"].toString();
     m_currentConfig = m_originConfig;
 
     emit propertiesChanged();
@@ -77,6 +82,31 @@ double PaletteCellPropertiesModel::scaleFactor() const
 bool PaletteCellPropertiesModel::drawStaff() const
 {
     return m_currentConfig.drawStaff;
+}
+
+bool PaletteCellPropertiesModel::isBassline() const
+{
+    return m_currentConfig.isBassline;
+}
+
+int PaletteCellPropertiesModel::basslinePattern() const
+{
+    return m_currentConfig.basslinePattern;
+}
+
+int PaletteCellPropertiesModel::transitionPattern() const
+{
+    return m_currentConfig.transitionPattern;
+}
+
+QString PaletteCellPropertiesModel::customBassline() const
+{
+    return m_currentConfig.customBassline;
+}
+
+QString PaletteCellPropertiesModel::customTransition() const
+{
+    return m_currentConfig.customTransition;
 }
 
 void PaletteCellPropertiesModel::setName(const QString& name)
@@ -126,5 +156,41 @@ void PaletteCellPropertiesModel::setDrawStaff(bool drawStaff)
     }
 
     m_currentConfig.drawStaff = drawStaff;
+    setConfig(m_currentConfig);
+}
+
+void PaletteCellPropertiesModel::setBasslinePattern(int pattern)
+{
+    if (basslinePattern() == pattern) {
+        return;
+    }
+    m_currentConfig.basslinePattern = pattern;
+    setConfig(m_currentConfig);
+}
+
+void PaletteCellPropertiesModel::setTransitionPattern(int pattern)
+{
+    if (transitionPattern() == pattern) {
+        return;
+    }
+    m_currentConfig.transitionPattern = pattern;
+    setConfig(m_currentConfig);
+}
+
+void PaletteCellPropertiesModel::setCustomBassline(const QString& pattern)
+{
+    if (customBassline() == pattern) {
+        return;
+    }
+    m_currentConfig.customBassline = pattern;
+    setConfig(m_currentConfig);
+}
+
+void PaletteCellPropertiesModel::setCustomTransition(const QString& pattern)
+{
+    if (customTransition() == pattern) {
+        return;
+    }
+    m_currentConfig.customTransition = pattern;
     setConfig(m_currentConfig);
 }

@@ -32,7 +32,7 @@ StyledDialogView {
 
     title: qsTrc("palette", "Palette cell properties")
 
-    contentWidth: 280
+    contentWidth: propertiesModel.isBassline ? 360 : 280
     contentHeight: contentColumn.implicitHeight
     margins: 12
 
@@ -156,6 +156,90 @@ StyledDialogView {
 
             navigation.panel: navPanel
             navigation.order: 5
+        }
+
+        SeparatorLine {
+            visible: propertiesModel.isBassline
+            anchors.margins: -root.margins
+        }
+
+        StyledTextLabel {
+            visible: propertiesModel.isBassline
+            text: qsTrc("palette", "Bassline pattern")
+            font: ui.theme.bodyBoldFont
+        }
+
+        StyledDropdown {
+            visible: propertiesModel.isBassline
+            width: parent.width
+            model: [
+                { text: qsTrc("palette", "Pattern 1"), value: 1 },
+                { text: qsTrc("palette", "Pattern 2"), value: 2 },
+                { text: qsTrc("palette", "Pattern 3"), value: 3 },
+                { text: qsTrc("palette", "Pattern 4"), value: 4 },
+                { text: qsTrc("palette", "Custom"), value: 5 }
+            ]
+            textRole: "text"
+            valueRole: "value"
+            currentIndex: propertiesModel.basslinePattern - 1
+            onActivated: function(index, value) {
+                propertiesModel.basslinePattern = value
+            }
+            navigation.panel: navPanel
+            navigation.order: 6
+        }
+
+        TextInputArea {
+            visible: propertiesModel.isBassline && propertiesModel.basslinePattern === 5
+            width: parent.width
+            initialHeight: 64
+            currentText: propertiesModel.customBassline
+            hint: qsTrc("palette", "2:C0,1:R,1:C7,2:C0,2:C7")
+            onTextChanged: function(newTextValue) {
+                propertiesModel.customBassline = newTextValue
+            }
+            navigation.panel: navPanel
+            navigation.order: 7
+        }
+
+        StyledTextLabel {
+            visible: propertiesModel.isBassline
+            text: qsTrc("palette", "Transition pattern")
+            font: ui.theme.bodyBoldFont
+        }
+
+        StyledDropdown {
+            visible: propertiesModel.isBassline
+            width: parent.width
+            model: [
+                { text: qsTrc("palette", "None"), value: 0 },
+                { text: qsTrc("palette", "Transition 1"), value: 1 },
+                { text: qsTrc("palette", "Transition 2"), value: 2 },
+                { text: qsTrc("palette", "Transition 3"), value: 3 },
+                { text: qsTrc("palette", "Transition 4"), value: 4 },
+                { text: qsTrc("palette", "Custom"), value: 5 }
+            ]
+            textRole: "text"
+            valueRole: "value"
+            currentIndex: propertiesModel.transitionPattern
+            onActivated: function(index, value) {
+                propertiesModel.transitionPattern = value
+            }
+            navigation.panel: navPanel
+            navigation.order: 8
+        }
+
+        TextInputArea {
+            visible: propertiesModel.isBassline && propertiesModel.transitionPattern === 5
+            width: parent.width
+            initialHeight: 64
+            currentText: propertiesModel.customTransition
+            hint: qsTrc("palette", "1:C0,1:C7,1:N7,1:N0")
+            onTextChanged: function(newTextValue) {
+                propertiesModel.customTransition = newTextValue
+            }
+            navigation.panel: navPanel
+            navigation.order: 9
         }
 
         ButtonBox {

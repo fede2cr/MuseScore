@@ -255,6 +255,8 @@ bool PaletteCell::read(XmlReader& e, bool pasteMode)
             const muse::ui::UiAction& action = actionsRegister()->action(icon->actionCode());
             if (action.isValid()) {
                 icon->setAction(icon->actionCode(), static_cast<char16_t>(action.iconCode));
+            } else if (icon->isBassline()) {
+                icon->setAction(icon->actionCode(), u'\u266b');
             } else {
                 add = false;
             }

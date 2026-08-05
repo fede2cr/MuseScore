@@ -74,10 +74,15 @@ public:
 
     struct PaletteCellConfig {
         QString name;
+        QString customBassline;
+        QString customTransition;
         double xOffset = 0;
         double yOffset = 0;
         double scale = 0;
+        int basslinePattern = 1;
+        int transitionPattern = 0;
         bool drawStaff = false;
+        bool isBassline = false;
     };
 
     virtual muse::ValCh<PaletteConfig> paletteConfig(const QString& paletteId) const = 0;

@@ -39,6 +39,11 @@ class PaletteCellPropertiesModel : public QObject
     Q_PROPERTY(double yOffset READ yOffset WRITE setYOffset NOTIFY propertiesChanged)
     Q_PROPERTY(double scaleFactor READ scaleFactor WRITE setScaleFactor NOTIFY propertiesChanged)
     Q_PROPERTY(bool drawStaff READ drawStaff WRITE setDrawStaff NOTIFY propertiesChanged)
+    Q_PROPERTY(bool isBassline READ isBassline NOTIFY propertiesChanged)
+    Q_PROPERTY(int basslinePattern READ basslinePattern WRITE setBasslinePattern NOTIFY propertiesChanged)
+    Q_PROPERTY(int transitionPattern READ transitionPattern WRITE setTransitionPattern NOTIFY propertiesChanged)
+    Q_PROPERTY(QString customBassline READ customBassline WRITE setCustomBassline NOTIFY propertiesChanged)
+    Q_PROPERTY(QString customTransition READ customTransition WRITE setCustomTransition NOTIFY propertiesChanged)
 
     QML_ELEMENT
 
@@ -50,6 +55,11 @@ public:
     double yOffset() const;
     double scaleFactor() const;
     bool drawStaff() const;
+    bool isBassline() const;
+    int basslinePattern() const;
+    int transitionPattern() const;
+    QString customBassline() const;
+    QString customTransition() const;
 
     Q_INVOKABLE void load(const QVariant& properties);
     Q_INVOKABLE void reject();
@@ -60,6 +70,10 @@ public slots:
     void setYOffset(double yOffset);
     void setScaleFactor(double scale);
     void setDrawStaff(bool drawStaff);
+    void setBasslinePattern(int pattern);
+    void setTransitionPattern(int pattern);
+    void setCustomBassline(const QString& pattern);
+    void setCustomTransition(const QString& pattern);
 
 signals:
     void propertiesChanged();

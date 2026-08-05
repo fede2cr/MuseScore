@@ -27,6 +27,10 @@
 
 #include "measure.h"
 
+#include <algorithm>
+#include <charconv>
+#include <numeric>
+
 #include "../editing/mscoreview.h"
 #include "../editing/editmeasures.h"
 #include "../editing/editstaff.h"
@@ -44,6 +48,7 @@
 #include "clef.h"
 #include "durationelement.h"
 #include "factory.h"
+#include "harmony.h"
 #include "hook.h"
 #include "key.h"
 #include "keysig.h"
@@ -91,6 +96,287 @@ using namespace mu;
 using namespace mu::engraving;
 
 namespace mu::engraving {
+namespace {
+enum class BasslineChordSource {
+    CURRENT,
+    NEXT,
+    REST
+};
+
+struct BasslineStep {
+    int eighths;
+    int semitones;
+    BasslineChordSource source = BasslineChordSource::CURRENT;
+};
+
+using BasslinePattern = std::vector<BasslineStep>;
+
+struct BasslineEvent {
+    Fraction tick;
+    Fraction duration;
+    Harmony* harmony = nullptr;
+    int semitones = 0;
+    bool rest = false;
+};
+
+bool isBasslineAction(ActionIconType type)
+{
+    return type >= ActionIconType::BASSLINE_SALSA_1 && type <= ActionIconType::BASSLINE_BOLERO_4;
+}
+
+const BasslinePattern& basslinePattern(ActionIconType type, int patternNumber)
+{
+    static const BasslinePattern salsa1 {
+        { 2, 0 }, { 1, 0, BasslineChordSource::REST }, { 1, 7 },
+        { 2, 0 }, { 1, 0, BasslineChordSource::REST }, { 1, 7 }
+    };
+    static const BasslinePattern salsa2 { { 3, 0 }, { 1, 7 }, { 3, 0 }, { 1, 7 } };
+    static const BasslinePattern salsa3 {
+        { 1, 0 }, { 1, 0, BasslineChordSource::REST }, { 2, 7 },
+        { 1, 0 }, { 1, 0, BasslineChordSource::REST }, { 2, 7 }
+    };
+    static const BasslinePattern salsa4 { { 2, 0 }, { 2, 7 }, { 2, 12 }, { 2, 7 } };
+    static const BasslinePattern bolero1 { { 2, 0 }, { 2, 7 }, { 2, 0 }, { 2, 7 } };
+    static const BasslinePattern bolero2 { { 2, 0 }, { 1, 7 }, { 1, 0 }, { 2, 7 }, { 1, 0 }, { 1, 7 } };
+    static const BasslinePattern bolero3 { { 4, 0 }, { 2, 7 }, { 2, 0 } };
+    static const BasslinePattern bolero4 { { 1, 0 }, { 1, 7 }, { 1, 0 }, { 1, 7 }, { 1, 0 }, { 1, 7 }, { 1, 0 }, { 1, 7 } };
+
+    const bool salsa = type <= ActionIconType::BASSLINE_SALSA_4;
+    switch (patternNumber) {
+    case 2: return salsa ? salsa2 : bolero2;
+    case 3: return salsa ? salsa3 : bolero3;
+    case 4: return salsa ? salsa4 : bolero4;
+    default: return salsa ? salsa1 : bolero1;
+    }
+}
+
+const BasslinePattern& transitionPattern(int patternNumber)
+{
+    static const BasslinePattern transition1 {
+        { 1, 0 }, { 1, 7 }, { 1, 7, BasslineChordSource::NEXT }, { 1, 0, BasslineChordSource::NEXT }
+    };
+    static const BasslinePattern transition2 {
+        { 1, 0 }, { 1, 2 }, { 1, -1, BasslineChordSource::NEXT }, { 1, 0, BasslineChordSource::NEXT }
+    };
+    static const BasslinePattern transition3 {
+        { 2, 0 }, { 1, 7, BasslineChordSource::NEXT }, { 1, 0, BasslineChordSource::NEXT }
+    };
+    static const BasslinePattern transition4 {
+        { 1, 0 }, { 1, 4 }, { 1, 7, BasslineChordSource::NEXT }, { 1, 0, BasslineChordSource::NEXT }
+    };
+
+    switch (patternNumber) {
+    case 2: return transition2;
+    case 3: return transition3;
+    case 4: return transition4;
+    default: return transition1;
+    }
+}
+
+std::string_view trim(std::string_view text)
+{
+    const size_t first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos) {
+        return {};
+    }
+    return text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
+}
+
+bool parseInteger(std::string_view text, int& value)
+{
+    text = trim(text);
+    const char* end = text.data() + text.size();
+    const auto result = std::from_chars(text.data(), end, value);
+    return result.ec == std::errc() && result.ptr == end;
+}
+
+bool parseCustomPattern(const std::string& text, bool transition, BasslinePattern& pattern)
+{
+    size_t start = 0;
+    while (start < text.size()) {
+        const size_t end = text.find(',', start);
+        const std::string_view token = trim(std::string_view(text).substr(start, end - start));
+        const size_t separator = token.find(':');
+        if (separator == std::string_view::npos) {
+            return false;
+        }
+
+        BasslineStep step;
+        if (!parseInteger(token.substr(0, separator), step.eighths) || step.eighths <= 0) {
+            return false;
+        }
+        const std::string_view note = trim(token.substr(separator + 1));
+        if (note == "R" || note == "r") {
+            step.source = BasslineChordSource::REST;
+        } else if (note.size() < 2 || (note.front() != 'C' && note.front() != 'c' && note.front() != 'N' && note.front() != 'n')) {
+            return false;
+        } else {
+            step.source = note.front() == 'N' || note.front() == 'n' ? BasslineChordSource::NEXT : BasslineChordSource::CURRENT;
+            if ((!transition && step.source == BasslineChordSource::NEXT)
+                || !parseInteger(note.substr(1), step.semitones)
+                || step.semitones < -24 || step.semitones > 24) {
+                return false;
+            }
+        }
+        pattern.push_back(step);
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+
+    const int totalEighths = std::accumulate(pattern.begin(), pattern.end(), 0,
+                                             [](int total, const BasslineStep& step) { return total + step.eighths; });
+    if (pattern.empty() || (!transition && totalEighths != 8) || (transition && totalEighths > 8)) {
+        return false;
+    }
+    if (transition) {
+        return pattern.front().source == BasslineChordSource::CURRENT
+               && pattern.back().source == BasslineChordSource::NEXT;
+    }
+    return true;
+}
+
+bool resolvePatterns(ActionIconType type, const BasslineSettings& settings, BasslinePattern& main, BasslinePattern& transition)
+{
+    if (settings.pattern == 5) {
+        if (!parseCustomPattern(settings.customPattern, false, main)) {
+            return false;
+        }
+    } else {
+        main = basslinePattern(type, settings.pattern);
+    }
+    if (settings.transition == 5) {
+        return parseCustomPattern(settings.customTransition, true, transition);
+    }
+    if (settings.transition > 0) {
+        transition = transitionPattern(settings.transition);
+    }
+    return true;
+}
+
+std::vector<Harmony*> measureHarmonies(Measure* measure, staff_idx_t staffIdx)
+{
+    std::vector<Harmony*> harmonies;
+    for (Segment* segment = measure->first(); segment; segment = segment->next()) {
+        for (EngravingItem* annotation : segment->annotations()) {
+            if (annotation->isHarmony() && annotation->staffIdx() == staffIdx) {
+                harmonies.push_back(toHarmony(annotation));
+            }
+        }
+    }
+    return harmonies;
+}
+
+Harmony* harmonyAt(const std::vector<Harmony*>& harmonies, const Fraction& tick)
+{
+    Harmony* result = harmonies.front();
+    for (Harmony* harmony : harmonies) {
+        if (harmony->tick() > tick) {
+            break;
+        }
+        result = harmony;
+    }
+    return result;
+}
+
+Harmony* nextHarmonyOnStaff(Harmony* harmony, staff_idx_t staffIdx)
+{
+    for (Harmony* next = harmony->findNext(); next; next = next->findNext()) {
+        if (next->staffIdx() == staffIdx) {
+            return next;
+        }
+    }
+    return nullptr;
+}
+
+EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIconType type, const BasslineSettings& settings)
+{
+    Score* score = measure->score();
+    std::vector<Harmony*> harmonies = measureHarmonies(measure, staffIdx);
+    if (harmonies.empty()) {
+        MScore::setError(MsError::BASSLINE_REQUIRES_CHORD_SYMBOL);
+        return nullptr;
+    }
+
+    BasslinePattern mainPattern;
+    BasslinePattern selectedTransition;
+    if (!resolvePatterns(type, settings, mainPattern, selectedTransition)) {
+        MScore::setError(MsError::BASSLINE_INVALID_PATTERN);
+        return nullptr;
+    }
+
+    std::vector<BasslineEvent> events;
+    Fraction eventTick = measure->tick();
+    size_t stepIndex = 0;
+    while (eventTick < measure->endTick()) {
+        const BasslineStep& step = mainPattern[stepIndex++ % mainPattern.size()];
+        Fraction duration(step.eighths, 8);
+        if (eventTick + duration > measure->endTick()) {
+            duration = measure->endTick() - eventTick;
+        }
+        events.push_back({ eventTick, duration, harmonyAt(harmonies, eventTick), step.semitones,
+                           step.source == BasslineChordSource::REST });
+        eventTick += duration;
+    }
+
+    if (!selectedTransition.empty()) {
+        for (Harmony* current : harmonies) {
+            Harmony* next = nextHarmonyOnStaff(current, staffIdx);
+            if (!next || next->tick() > measure->endTick()) {
+                continue;
+            }
+            const int transitionEighths = std::accumulate(selectedTransition.begin(), selectedTransition.end(), 0,
+                                                          [](int total, const BasslineStep& step) {
+                return total + step.eighths;
+            });
+            const Fraction transitionStart = next->tick() - Fraction(transitionEighths, 8);
+            if (transitionStart < measure->tick() || transitionStart < current->tick()) {
+                continue;
+            }
+
+            for (BasslineEvent& event : events) {
+                if (event.tick < transitionStart && event.tick + event.duration > transitionStart) {
+                    event.duration = transitionStart - event.tick;
+                }
+            }
+            std::erase_if(events, [transitionStart, next](const BasslineEvent& event) {
+                return event.tick >= transitionStart && event.tick < next->tick();
+            });
+            Fraction tick = transitionStart;
+            for (const BasslineStep& step : selectedTransition) {
+                const Fraction duration(step.eighths, 8);
+                Harmony* source = step.source == BasslineChordSource::NEXT ? next : current;
+                events.push_back({ tick, duration, source, step.semitones, step.source == BasslineChordSource::REST });
+                tick += duration;
+            }
+        }
+        std::sort(events.begin(), events.end(), [](const BasslineEvent& left, const BasslineEvent& right) {
+            return left.tick < right.tick;
+        });
+    }
+
+    const track_idx_t track = staff2track(staffIdx);
+    EngravingItem* firstResult = nullptr;
+    for (const BasslineEvent& event : events) {
+        Segment* segment = measure->undoGetSegment(SegmentType::ChordRest, event.tick);
+        NoteVal noteValue;
+        if (!event.rest) {
+            const int harmonyTpc = event.harmony->bassTpc() != Tpc::TPC_INVALID ? event.harmony->bassTpc() : event.harmony->rootTpc();
+            const int rootPitchClass = (tpc2pitch(harmonyTpc) + PITCH_DELTA_OCTAVE) % PITCH_DELTA_OCTAVE;
+            noteValue.pitch = 36 + rootPitchClass + event.semitones;
+            noteValue.tpc1 = pitch2tpc(noteValue.pitch, Key::C, Prefer::NEAREST);
+            noteValue.tpc2 = noteValue.tpc1;
+        }
+        Segment* result = score->setNoteRest(segment, track, noteValue, event.duration, DirectionV::AUTO);
+        if (!firstResult && result) {
+            firstResult = result->element(track);
+        }
+    }
+    return firstResult;
+}
+}
+
 //---------------------------------------------------------
 //   MStaff
 ///   Per staff values of measure.
@@ -1455,6 +1741,18 @@ bool Measure::acceptDrop(EditData& data) const
 
     case ElementType::ACTION_ICON:
         switch (toActionIcon(e)->actionType()) {
+        case ActionIconType::BASSLINE_SALSA_1:
+        case ActionIconType::BASSLINE_SALSA_2:
+        case ActionIconType::BASSLINE_SALSA_3:
+        case ActionIconType::BASSLINE_SALSA_4:
+        case ActionIconType::BASSLINE_BOLERO_1:
+        case ActionIconType::BASSLINE_BOLERO_2:
+        case ActionIconType::BASSLINE_BOLERO_3:
+        case ActionIconType::BASSLINE_BOLERO_4:
+            if (viewer) {
+                viewer->setDropRectangle(staffRect);
+            }
+            return true;
         case ActionIconType::VFRAME:
         case ActionIconType::HFRAME:
         case ActionIconType::TFRAME:
@@ -1520,6 +1818,39 @@ EngravingItem* Measure::drop(EditData& data)
     //bool fromPalette = (e->track() == -1);
 
     switch (e->type()) {
+    case ElementType::ACTION_ICON:
+    {
+        const ActionIconType actionType = toActionIcon(e)->actionType();
+        const BasslineSettings settings = toActionIcon(e)->basslineSettings();
+        if (!isBasslineAction(actionType)) {
+            delete e;
+            return nullptr;
+        }
+
+        const Fraction targetTick = tick();
+        if (measureHarmonies(this, staffIdx).empty()) {
+            MScore::setError(MsError::BASSLINE_REQUIRES_CHORD_SYMBOL);
+            delete e;
+            return nullptr;
+        }
+        BasslinePattern mainPattern;
+        BasslinePattern transition;
+        if (!resolvePatterns(actionType, settings, mainPattern, transition)) {
+            MScore::setError(MsError::BASSLINE_INVALID_PATTERN);
+            delete e;
+            return nullptr;
+        }
+        if (timesig() != Fraction(4, 4)) {
+            TimeSig* timeSig = Factory::createTimeSig(score()->dummy()->segment());
+            timeSig->setSig(Fraction(4, 4), TimeSigType::FOUR_FOUR);
+            score()->cmdAddTimeSig(this, staffIdx, timeSig, false);
+        }
+
+        delete e;
+        Measure* targetMeasure = score()->tick2measure(targetTick);
+        return targetMeasure ? createBassline(targetMeasure, staffIdx, actionType, settings) : nullptr;
+    }
+
     case ElementType::MARKER:
     case ElementType::JUMP:
         e->setParent(this);

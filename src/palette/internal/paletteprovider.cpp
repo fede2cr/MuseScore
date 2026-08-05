@@ -551,6 +551,14 @@ void UserPaletteController::editCellProperties(const QModelIndex& index)
         cell->drawStaff = config.drawStaff;
         cell->xoffset = config.xOffset;
         cell->yoffset = config.yOffset;
+        if (config.isBassline && cell->element && cell->element->isActionIcon()) {
+            engraving::BasslineSettings settings;
+            settings.pattern = config.basslinePattern;
+            settings.transition = config.transitionPattern;
+            settings.customPattern = config.customBassline.toStdString();
+            settings.customTransition = config.customTransition.toStdString();
+            engraving::toActionIcon(cell->element.get())->setBasslineSettings(settings);
+        }
         _userPalette->itemDataChanged(srcIndex);
     });
 
@@ -561,6 +569,17 @@ void UserPaletteController::editCellProperties(const QModelIndex& index)
     properties["yOffset"] = cell->yoffset;
     properties["scale"] = cell->mag;
     properties["drawStaff"] = cell->drawStaff;
+    if (cell->element && cell->element->isActionIcon()) {
+        const engraving::ActionIcon* icon = engraving::toActionIcon(cell->element.get());
+        if (icon->isBassline()) {
+            const engraving::BasslineSettings settings = icon->basslineSettings();
+            properties["isBassline"] = true;
+            properties["basslinePattern"] = settings.pattern;
+            properties["transitionPattern"] = settings.transition;
+            properties["customBassline"] = QString::fromStdString(settings.customPattern);
+            properties["customTransition"] = QString::fromStdString(settings.customTransition);
+        }
+    }
 
     QJsonDocument document = QJsonDocument::fromVariant(properties);
     QString uri = QString("musescore://palette/cellproperties?properties=%1")
