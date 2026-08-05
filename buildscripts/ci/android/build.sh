@@ -87,26 +87,9 @@ cmake -S . -B "$BUILD_DIR" -GNinja \
     -DMUSESCORE_BUILD_NUMBER="$MUSESCORE_BUILD_NUMBER_FOR_COMPILE" \
     -DMUSESCORE_REVISION="$MUSESCORE_REVISION" \
     -DMUE_ANDROID_TABLET_DESKTOP_EXPERIENCE=ON \
+    -DMUSE_MODULE_AUDIO_EXPORT=OFF \
+    -DMUE_BUILD_IMPEXP_AUDIOEXPORT_MODULE=OFF \
     "${CMAKE_LAUNCHER_ARGS[@]}"
-
-# Some fdk-aac payloads in muse_deps may contain Android-internal logging hooks
-# (non-NDK) that are not available in this CI environment. Sanitize those
-# sources after configure (when dependencies are populated) and before compile.
-FDK_AAC_SRC_DIR="$BUILD_DIR/_deps/fdk-aac/fdk-aac-2.0.3"
-if [[ -d "$FDK_AAC_SRC_DIR" ]]; then
-    mapfile -t FDK_AAC_ANDROID_LOG_FILES < <(
-        grep -RIl --include='*.c' --include='*.cc' --include='*.cpp' --include='*.h' \
-            -e 'log/log.h' -e 'android_errorWriteLog' "$FDK_AAC_SRC_DIR" || true
-    )
-
-    if [[ "${#FDK_AAC_ANDROID_LOG_FILES[@]}" -gt 0 ]]; then
-        echo "Sanitizing fdk-aac Android-internal logger hooks..."
-        for file in "${FDK_AAC_ANDROID_LOG_FILES[@]}"; do
-            sed -i '/#include[[:space:]]*[<"]log\/log\.h[>"]/d' "$file"
-            sed -i '/android_errorWriteLog[[:space:]]*(/d' "$file"
-        done
-    fi
-fi
 
 cmake --build "$BUILD_DIR" --parallel
 
