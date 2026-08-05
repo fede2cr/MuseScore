@@ -1818,39 +1818,6 @@ EngravingItem* Measure::drop(EditData& data)
     //bool fromPalette = (e->track() == -1);
 
     switch (e->type()) {
-    case ElementType::ACTION_ICON:
-    {
-        const ActionIconType actionType = toActionIcon(e)->actionType();
-        const BasslineSettings settings = toActionIcon(e)->basslineSettings();
-        if (!isBasslineAction(actionType)) {
-            delete e;
-            return nullptr;
-        }
-
-        const Fraction targetTick = tick();
-        if (measureHarmonies(this, staffIdx).empty()) {
-            MScore::setError(MsError::BASSLINE_REQUIRES_CHORD_SYMBOL);
-            delete e;
-            return nullptr;
-        }
-        BasslinePattern mainPattern;
-        BasslinePattern transition;
-        if (!resolvePatterns(actionType, settings, mainPattern, transition)) {
-            MScore::setError(MsError::BASSLINE_INVALID_PATTERN);
-            delete e;
-            return nullptr;
-        }
-        if (timesig() != Fraction(4, 4)) {
-            TimeSig* timeSig = Factory::createTimeSig(score()->dummy()->segment());
-            timeSig->setSig(Fraction(4, 4), TimeSigType::FOUR_FOUR);
-            score()->cmdAddTimeSig(this, staffIdx, timeSig, false);
-        }
-
-        delete e;
-        Measure* targetMeasure = score()->tick2measure(targetTick);
-        return targetMeasure ? createBassline(targetMeasure, staffIdx, actionType, settings) : nullptr;
-    }
-
     case ElementType::MARKER:
     case ElementType::JUMP:
         e->setParent(this);
@@ -2111,8 +2078,37 @@ EngravingItem* Measure::drop(EditData& data)
         score()->cmdAddMeasureRepeat(this, numMeasures, staffIdx);
         break;
     }
-    case ElementType::ACTION_ICON:
-        switch (toActionIcon(e)->actionType()) {
+    case ElementType::ACTION_ICON: {
+        const ActionIconType actionType = toActionIcon(e)->actionType();
+        if (isBasslineAction(actionType)) {
+            const BasslineSettings settings = toActionIcon(e)->basslineSettings();
+            const Fraction targetTick = tick();
+            if (measureHarmonies(this, staffIdx).empty()) {
+                MScore::setError(MsError::BASSLINE_REQUIRES_CHORD_SYMBOL);
+                delete e;
+                return nullptr;
+            }
+
+            BasslinePattern mainPattern;
+            BasslinePattern transition;
+            if (!resolvePatterns(actionType, settings, mainPattern, transition)) {
+                MScore::setError(MsError::BASSLINE_INVALID_PATTERN);
+                delete e;
+                return nullptr;
+            }
+
+            if (timesig() != Fraction(4, 4)) {
+                TimeSig* timeSig = Factory::createTimeSig(score()->dummy()->segment());
+                timeSig->setSig(Fraction(4, 4), TimeSigType::FOUR_FOUR);
+                score()->cmdAddTimeSig(this, staffIdx, timeSig, false);
+            }
+
+            delete e;
+            Measure* targetMeasure = score()->tick2measure(targetTick);
+            return targetMeasure ? createBassline(targetMeasure, staffIdx, actionType, settings) : nullptr;
+        }
+
+        switch (actionType) {
         case ActionIconType::VFRAME:
             return score()->insertBox(ElementType::VBOX, this);
         case ActionIconType::HFRAME:
@@ -2145,6 +2141,7 @@ EngravingItem* Measure::drop(EditData& data)
             break;
         }
         break;
+    }
 
     case ElementType::STAFFTYPE_CHANGE:
     {
