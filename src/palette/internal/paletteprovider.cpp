@@ -29,6 +29,7 @@
 #include <QMimeData>
 #include <QStandardPaths>
 
+#include "engraving/dom/actionicon.h"
 #include "engraving/dom/mscore.h"
 
 #include "palettecreator.h"
