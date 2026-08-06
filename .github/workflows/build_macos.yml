@@ -1,6 +1,15 @@
 name: 'Build: macOS'
 
 on:
+  push:
+    branches:
+      - main
+      - museandroid
+      - 'android/**'
+      - 'tablet/**'
+      - 'feature/android*'
+    tags:
+      - 'android-v*'
   pull_request:
   workflow_dispatch:
     inputs:
