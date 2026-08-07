@@ -20,6 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 trap 'echo Build failed; exit 1' ERR
+set -e
 
 if [ $(which nproc) ]; then
     JOBS=$(nproc --all)
