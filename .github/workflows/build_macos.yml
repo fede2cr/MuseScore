@@ -200,8 +200,14 @@ jobs:
         restore-keys: ${{runner.os}}-${{runner.arch}}-ccache-
     - name: Setup ccache
       run: |
-        brew install ccache
-        bash ./buildscripts/ci/tools/setup_ccache_config.sh
+        if brew install ccache; then
+          CCACHE_BIN_DIR="$(brew --prefix ccache)/bin"
+          echo "$CCACHE_BIN_DIR" >> "$GITHUB_PATH"
+          export PATH="$CCACHE_BIN_DIR:$PATH"
+          bash ./buildscripts/ci/tools/setup_ccache_config.sh
+        else
+          echo "::warning::Unable to install ccache; continuing without compiler caching"
+        fi
 
     - name: Install Qt
       # uses: jurplel/install-qt-action@v4
@@ -237,7 +243,11 @@ jobs:
         bash ./buildscripts/ci/macos/build.sh -n ${{ env.BUILD_NUMBER }} --crash_log_url $C_URL
     - name: Show ccache stats
       run: |
-        ccache -sv
+        if command -v ccache >/dev/null 2>&1; then
+          ccache -sv
+        else
+          echo "ccache is unavailable; skipping cache statistics"
+        fi
     - name: Package
       run: |
         S_S="${{ secrets.MAC_SIGN_CERTIFICATE_ENCRYPT_SECRET }}"; if [ -z "$S_S" ]; then S_S="''"; fi
@@ -281,7 +291,11 @@ jobs:
       id: prepare-save-ccache
       if: always()
       run: |
-        ccache --recompress 10
+        if command -v ccache >/dev/null 2>&1; then
+          ccache --recompress 10
+        else
+          echo "ccache is unavailable; skipping cache recompression"
+        fi
         echo "CCACHE_TIMESTAMP=$(date -u +"%F-%T")" | tee -a $GITHUB_OUTPUT
     - name: Save ccache files
       if: always()
