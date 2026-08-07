@@ -53,6 +53,12 @@ echo "CRASH_REPORT_URL: $CRASH_REPORT_URL"
 
 MUSESCORE_REVISION=$(git rev-parse --short=7 HEAD)
 
+# The pinned muse framework expects a muse_deps recipe URL that no longer
+# exists. Seed its cache with a descriptor backed by the upstream source.
+FDK_AAC_DEP_DIR="build.release/_deps/fdk-aac"
+mkdir -p "$FDK_AAC_DEP_DIR"
+cp ./buildscripts/ci/macos/deps/fdk-aac.cmake "$FDK_AAC_DEP_DIR/fdk-aac.cmake"
+
 MUSESCORE_MACOS_DEPS_PATH="$HOME/musescore_deps_macos" \
 CMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
 MUSESCORE_INSTALL_DIR="../applebuild" \
