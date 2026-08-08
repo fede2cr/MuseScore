@@ -106,11 +106,20 @@ enum class BasslineChordSource {
 // Open E string of a 4-string bass; roots are placed in the lowest octave above it.
 constexpr int BASSLINE_LOWEST_PITCH = 28;
 
+// Degrees whose size depends on the chord quality. A step always stores the minor/flat
+// form, so the stored offset doubles as the lowest pitch the step can ever reach.
+enum class BasslineDegree {
+    FIXED,
+    THIRD,
+    SEVENTH
+};
+
 struct BasslineStep {
     int eighths;
     int semitones;
     BasslineChordSource source = BasslineChordSource::CURRENT;
     bool tieForward = false;
+    BasslineDegree degree = BasslineDegree::FIXED;
 };
 
 using BasslinePattern = std::vector<BasslineStep>;
@@ -122,7 +131,25 @@ struct BasslineEvent {
     int semitones = 0;
     bool rest = false;
     bool tieForward = false;
+    BasslineDegree degree = BasslineDegree::FIXED;
 };
+
+int degreeAdjust(BasslineDegree degree, const Harmony* harmony)
+{
+    if (degree == BasslineDegree::FIXED || !harmony) {
+        return 0;
+    }
+    const ChordDescription* description = harmony->descr();
+    if (!description) {
+        return 0;
+    }
+    if (degree == BasslineDegree::THIRD) {
+        // Sus and other third-less chords fall back to the major third.
+        return description->chord.contains(3) ? 0 : 1;
+    }
+    // A triad with no written 7th keeps the flat 7th.
+    return description->chord.contains(11) ? 1 : 0;
+}
 
 bool isBasslineAction(ActionIconType type)
 {
@@ -136,23 +163,53 @@ const BasslinePattern& basslinePattern(ActionIconType type, int patternNumber)
     static const BasslinePattern salsa1 {
         { 3, 0 }, { 3, 7 }, { 2, 0, BasslineChordSource::NEXT, true }
     };
-    static const BasslinePattern salsa2 { { 3, 0 }, { 1, 7 }, { 3, 0 }, { 1, 7 } };
-    static const BasslinePattern salsa3 {
-        { 1, 0 }, { 1, 0, BasslineChordSource::REST }, { 2, 7 },
-        { 1, 0 }, { 1, 0, BasslineChordSource::REST }, { 2, 7 }
+    // Salsa 1 with the 5th re-articulated as 8th + quarter instead of tied.
+    static const BasslinePattern salsa2 {
+        { 3, 0 }, { 1, 7 }, { 2, 7 }, { 2, 0, BasslineChordSource::NEXT, true }
     };
-    static const BasslinePattern salsa4 { { 2, 0 }, { 2, 7 }, { 2, 12 }, { 2, 7 } };
-    static const BasslinePattern bolero1 { { 2, 0 }, { 2, 7 }, { 2, 0 }, { 2, 7 } };
-    static const BasslinePattern bolero2 { { 2, 0 }, { 1, 7 }, { 1, 0 }, { 2, 7 }, { 1, 0 }, { 1, 7 } };
-    static const BasslinePattern bolero3 { { 4, 0 }, { 2, 7 }, { 2, 0 } };
-    static const BasslinePattern bolero4 { { 1, 0 }, { 1, 7 }, { 1, 0 }, { 1, 7 }, { 1, 0 }, { 1, 7 }, { 1, 0 }, { 1, 7 } };
+    // Salsa 1 with the beat 4 anticipation re-articulated as two 8ths; only the second is tied over.
+    static const BasslinePattern salsa3 {
+        { 3, 0 }, { 3, 7 },
+        { 1, 0, BasslineChordSource::NEXT }, { 1, 0, BasslineChordSource::NEXT, true }
+    };
+    // Root held for a half note, then the 7th below it and the 3rd above, both quarter notes.
+    static const BasslinePattern bolero1 {
+        { 4, 0 },
+        { 2, -2, BasslineChordSource::CURRENT, false, BasslineDegree::SEVENTH },
+        { 2, 3, BasslineChordSource::CURRENT, false, BasslineDegree::THIRD }
+    };
+    // Bolero 1's rhythm climbing root, 3rd and octave.
+    static const BasslinePattern bolero2 {
+        { 4, 0 },
+        { 2, 3, BasslineChordSource::CURRENT, false, BasslineDegree::THIRD },
+        { 2, 12 }
+    };
+    // Repeated root, then the 7th below it and the 3rd above.
+    static const BasslinePattern bolero3 {
+        { 3, 0 }, { 1, 0 },
+        { 2, -2, BasslineChordSource::CURRENT, false, BasslineDegree::SEVENTH },
+        { 2, 3, BasslineChordSource::CURRENT, false, BasslineDegree::THIRD }
+    };
+    // Bolero 3's rhythm climbing repeated root, 3rd and octave.
+    static const BasslinePattern bolero4 {
+        { 3, 0 }, { 1, 0 },
+        { 2, 3, BasslineChordSource::CURRENT, false, BasslineDegree::THIRD },
+        { 2, 12 }
+    };
 
-    const bool salsa = type <= ActionIconType::BASSLINE_SALSA_4;
+    if (type <= ActionIconType::BASSLINE_SALSA_3) {
+        switch (patternNumber) {
+        case 2: return salsa2;
+        case 3: return salsa3;
+        default: return salsa1;
+        }
+    }
+
     switch (patternNumber) {
-    case 2: return salsa ? salsa2 : bolero2;
-    case 3: return salsa ? salsa3 : bolero3;
-    case 4: return salsa ? salsa4 : bolero4;
-    default: return salsa ? salsa1 : bolero1;
+    case 2: return bolero2;
+    case 3: return bolero3;
+    case 4: return bolero4;
+    default: return bolero1;
     }
 }
 
@@ -353,6 +410,17 @@ EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIcon
         return nullptr;
     }
 
+    // Patterns reaching below the root are shifted as a whole, so the line keeps its shape
+    // instead of a single note jumping an octave on its own.
+    int lowestOffset = 0;
+    for (const BasslinePattern* pattern : { &mainPattern, &selectedTransition }) {
+        for (const BasslineStep& step : *pattern) {
+            if (step.source != BasslineChordSource::REST) {
+                lowestOffset = std::min(lowestOffset, step.semitones);
+            }
+        }
+    }
+
     std::vector<BasslineEvent> events;
     Fraction eventTick = measure->tick();
     size_t stepIndex = 0;
@@ -371,7 +439,7 @@ EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIcon
             }
         }
         events.push_back({ eventTick, duration, harmony, step.semitones,
-                           step.source == BasslineChordSource::REST, step.tieForward });
+                           step.source == BasslineChordSource::REST, step.tieForward, step.degree });
         eventTick += duration;
     }
 
@@ -402,7 +470,8 @@ EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIcon
             for (const BasslineStep& step : selectedTransition) {
                 const Fraction duration(step.eighths, 8);
                 Harmony* source = step.source == BasslineChordSource::NEXT ? next : current;
-                events.push_back({ tick, duration, source, step.semitones, step.source == BasslineChordSource::REST });
+                events.push_back({ tick, duration, source, step.semitones,
+                                   step.source == BasslineChordSource::REST, false, step.degree });
                 tick += duration;
             }
         }
@@ -420,9 +489,12 @@ EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIcon
             const int harmonyTpc = event.harmony->bassTpc() != Tpc::TPC_INVALID ? event.harmony->bassTpc() : event.harmony->rootTpc();
             const int rootPitchClass = (tpc2pitch(harmonyTpc) + PITCH_DELTA_OCTAVE) % PITCH_DELTA_OCTAVE;
             const int lowestPitchClass = BASSLINE_LOWEST_PITCH % PITCH_DELTA_OCTAVE;
-            const int rootPitch = BASSLINE_LOWEST_PITCH
-                                  + (rootPitchClass - lowestPitchClass + PITCH_DELTA_OCTAVE) % PITCH_DELTA_OCTAVE;
-            noteValue.pitch = rootPitch + event.semitones;
+            int rootPitch = BASSLINE_LOWEST_PITCH
+                            + (rootPitchClass - lowestPitchClass + PITCH_DELTA_OCTAVE) % PITCH_DELTA_OCTAVE;
+            while (rootPitch + lowestOffset < BASSLINE_LOWEST_PITCH) {
+                rootPitch += PITCH_DELTA_OCTAVE;
+            }
+            noteValue.pitch = rootPitch + event.semitones + degreeAdjust(event.degree, event.harmony);
             noteValue.tpc1 = pitch2tpc(noteValue.pitch, Key::C, Prefer::NEAREST);
             noteValue.tpc2 = noteValue.tpc1;
         }
@@ -1809,7 +1881,6 @@ bool Measure::acceptDrop(EditData& data) const
         case ActionIconType::BASSLINE_SALSA_1:
         case ActionIconType::BASSLINE_SALSA_2:
         case ActionIconType::BASSLINE_SALSA_3:
-        case ActionIconType::BASSLINE_SALSA_4:
         case ActionIconType::BASSLINE_BOLERO_1:
         case ActionIconType::BASSLINE_BOLERO_2:
         case ActionIconType::BASSLINE_BOLERO_3:

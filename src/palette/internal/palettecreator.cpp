@@ -239,7 +239,6 @@ PalettePtr PaletteCreator::newBasslinePalette()
     appendPattern(ActionIconType::BASSLINE_SALSA_1, "bassline-salsa-1", QT_TRANSLATE_NOOP("palette", "Salsa pattern 1"));
     appendPattern(ActionIconType::BASSLINE_SALSA_2, "bassline-salsa-2", QT_TRANSLATE_NOOP("palette", "Salsa pattern 2"));
     appendPattern(ActionIconType::BASSLINE_SALSA_3, "bassline-salsa-3", QT_TRANSLATE_NOOP("palette", "Salsa pattern 3"));
-    appendPattern(ActionIconType::BASSLINE_SALSA_4, "bassline-salsa-4", QT_TRANSLATE_NOOP("palette", "Salsa pattern 4"));
     appendPattern(ActionIconType::BASSLINE_BOLERO_1, "bassline-bolero-1", QT_TRANSLATE_NOOP("palette", "Bolero pattern 1"));
     appendPattern(ActionIconType::BASSLINE_BOLERO_2, "bassline-bolero-2", QT_TRANSLATE_NOOP("palette", "Bolero pattern 2"));
     appendPattern(ActionIconType::BASSLINE_BOLERO_3, "bassline-bolero-3", QT_TRANSLATE_NOOP("palette", "Bolero pattern 3"));

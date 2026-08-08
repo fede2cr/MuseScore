@@ -83,7 +83,6 @@ enum class ActionIconType : signed char {
     BASSLINE_SALSA_1,
     BASSLINE_SALSA_2,
     BASSLINE_SALSA_3,
-    BASSLINE_SALSA_4,
     BASSLINE_BOLERO_1,
     BASSLINE_BOLERO_2,
     BASSLINE_BOLERO_3,
