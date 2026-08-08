@@ -103,10 +103,14 @@ enum class BasslineChordSource {
     REST
 };
 
+// Open E string of a 4-string bass; roots are placed in the lowest octave above it.
+constexpr int BASSLINE_LOWEST_PITCH = 28;
+
 struct BasslineStep {
     int eighths;
     int semitones;
     BasslineChordSource source = BasslineChordSource::CURRENT;
+    bool tieForward = false;
 };
 
 using BasslinePattern = std::vector<BasslineStep>;
@@ -117,6 +121,7 @@ struct BasslineEvent {
     Harmony* harmony = nullptr;
     int semitones = 0;
     bool rest = false;
+    bool tieForward = false;
 };
 
 bool isBasslineAction(ActionIconType type)
@@ -126,9 +131,10 @@ bool isBasslineAction(ActionIconType type)
 
 const BasslinePattern& basslinePattern(ActionIconType type, int patternNumber)
 {
+    // Anticipated bass: dotted quarter root, 5th (8th tied to quarter), then the next
+    // chord's root on beat 4 tied over the barline.
     static const BasslinePattern salsa1 {
-        { 2, 0 }, { 1, 0, BasslineChordSource::REST }, { 1, 7 },
-        { 2, 0 }, { 1, 0, BasslineChordSource::REST }, { 1, 7 }
+        { 3, 0 }, { 3, 7 }, { 2, 0, BasslineChordSource::NEXT, true }
     };
     static const BasslinePattern salsa2 { { 3, 0 }, { 1, 7 }, { 3, 0 }, { 1, 7 } };
     static const BasslinePattern salsa3 {
@@ -290,6 +296,47 @@ Harmony* nextHarmonyOnStaff(Harmony* harmony, staff_idx_t staffIdx)
     return nullptr;
 }
 
+Note* loneNoteAt(Segment* segment, track_idx_t track)
+{
+    EngravingItem* item = segment ? segment->element(track) : nullptr;
+    if (!item || !item->isChord()) {
+        return nullptr;
+    }
+    const std::vector<Note*>& notes = toChord(item)->notes();
+    return notes.size() == 1 ? notes.front() : nullptr;
+}
+
+Segment* lastChordRestSegment(Measure* measure)
+{
+    Segment* result = nullptr;
+    for (Segment* segment = measure->first(SegmentType::ChordRest); segment; segment = segment->next(SegmentType::ChordRest)) {
+        result = segment;
+    }
+    return result;
+}
+
+// Joins the anticipation to the downbeat it resolves to; same pitch means the same chord root.
+void tieAcrossBarline(Measure* from, track_idx_t track)
+{
+    Measure* to = from ? from->nextMeasure() : nullptr;
+    if (!to) {
+        return;
+    }
+    Note* startNote = loneNoteAt(lastChordRestSegment(from), track);
+    Note* endNote = loneNoteAt(to->first(SegmentType::ChordRest), track);
+    if (!startNote || !endNote || startNote->pitch() != endNote->pitch() || startNote->tieFor() || endNote->tieBack()) {
+        return;
+    }
+
+    Tie* tie = Factory::createTie(startNote);
+    tie->setStartNote(startNote);
+    tie->setEndNote(endNote);
+    tie->setTrack(track);
+    tie->setTick(startNote->chord()->segment()->tick());
+    tie->setTicks(endNote->chord()->segment()->tick() - tie->tick());
+    from->score()->undoAddElement(tie);
+}
+
 EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIconType type, const BasslineSettings& settings)
 {
     Score* score = measure->score();
@@ -315,8 +362,16 @@ EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIcon
         if (eventTick + duration > measure->endTick()) {
             duration = measure->endTick() - eventTick;
         }
-        events.push_back({ eventTick, duration, harmonyAt(harmonies, eventTick), step.semitones,
-                           step.source == BasslineChordSource::REST });
+        Harmony* harmony = harmonyAt(harmonies, eventTick);
+        if (step.source == BasslineChordSource::NEXT) {
+            // Only anticipate a chord that actually lands on the next downbeat.
+            Harmony* next = nextHarmonyOnStaff(harmony, staffIdx);
+            if (next && next->tick() == measure->endTick()) {
+                harmony = next;
+            }
+        }
+        events.push_back({ eventTick, duration, harmony, step.semitones,
+                           step.source == BasslineChordSource::REST, step.tieForward });
         eventTick += duration;
     }
 
@@ -364,7 +419,10 @@ EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIcon
         if (!event.rest) {
             const int harmonyTpc = event.harmony->bassTpc() != Tpc::TPC_INVALID ? event.harmony->bassTpc() : event.harmony->rootTpc();
             const int rootPitchClass = (tpc2pitch(harmonyTpc) + PITCH_DELTA_OCTAVE) % PITCH_DELTA_OCTAVE;
-            noteValue.pitch = 36 + rootPitchClass + event.semitones;
+            const int lowestPitchClass = BASSLINE_LOWEST_PITCH % PITCH_DELTA_OCTAVE;
+            const int rootPitch = BASSLINE_LOWEST_PITCH
+                                  + (rootPitchClass - lowestPitchClass + PITCH_DELTA_OCTAVE) % PITCH_DELTA_OCTAVE;
+            noteValue.pitch = rootPitch + event.semitones;
             noteValue.tpc1 = pitch2tpc(noteValue.pitch, Key::C, Prefer::NEAREST);
             noteValue.tpc2 = noteValue.tpc1;
         }
@@ -373,6 +431,13 @@ EngravingItem* createBassline(Measure* measure, staff_idx_t staffIdx, ActionIcon
             firstResult = result->element(track);
         }
     }
+
+    // A transition pattern replaces the tail, which correctly suppresses the anticipation tie.
+    if (!events.empty() && events.back().tieForward) {
+        tieAcrossBarline(measure->prevMeasure(), track);
+        tieAcrossBarline(measure, track);
+    }
+
     return firstResult;
 }
 }
