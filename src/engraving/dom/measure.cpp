@@ -139,7 +139,9 @@ int degreeAdjust(BasslineDegree degree, const Harmony* harmony)
     if (degree == BasslineDegree::FIXED || !harmony) {
         return 0;
     }
-    const ChordDescription* description = harmony->descr();
+    // Polychords are keyed off their first chord, matching Harmony::rootTpc().
+    const std::vector<HarmonyInfo*> infos = harmony->chords();
+    const ChordDescription* description = infos.empty() ? nullptr : infos.front()->descr();
     if (!description) {
         return 0;
     }
